@@ -1,0 +1,2208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Dark Ice</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { width: 100%; height: 100%; background: #0d1117; font-family: 'Segoe UI', Arial, sans-serif; }
+#root { min-height: 100%; }
+
+.title-screen {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 50vh; color: white; text-align: center; padding: 20px;
+}
+.title-screen h1 { font-size: 3.5em; margin-bottom: 20px; letter-spacing: 2px; }
+.title-screen .subtitle { font-size: 1.3em; margin-bottom: 12px; color: #ccc; }
+.title-screen .version { font-size: 0.85em; color: #888; margin-bottom: 40px; }
+.title-screen button {
+  font-size: 1.4em; padding: 14px 48px; background: #27ae60; color: white;
+  border: none; border-radius: 8px; cursor: pointer; font-weight: bold;
+  letter-spacing: 1px; transition: background 0.2s;
+}
+.title-screen button:hover { background: #2ecc71; }
+
+.game-container {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  height: 100dvh; width: 100%; padding: 0; touch-action: none; overflow: hidden;
+}
+.hud-overlay {
+  position: absolute; top: 0; left: 0; width: 100%; z-index: 10;
+  display: flex; justify-content: center; align-items: center;
+  padding: 4px 12px; pointer-events: none;
+}
+.hud-pill {
+  display: flex; align-items: center; gap: 16px;
+  background: rgba(0,0,0,0.5); border-radius: 6px; padding: 2px 10px;
+  color: white; font-size: 1.1em; pointer-events: none;
+}
+.hud-pill .score { font-weight: bold; font-size: 1.3em; }
+.hud-pill .clock { color: #ccc; font-variant-numeric: tabular-nums; }
+.hud-pill .period { color: #ccc; font-size: 0.9em; }
+.hud-version {
+  position: absolute; top: 4px; left: 8px; z-index: 10;
+  background: rgba(0,0,0,0.5); border-radius: 6px; padding: 2px 8px;
+  color: #FFD700; font-size: 1.2em; font-weight: bold; pointer-events: none;
+}
+.landing-wrapper { width: 100%; }
+.landing-content {
+  max-width: 700px; margin: 0 auto; padding: 20px 24px 60px;
+  color: #ccc; font-size: 1em; line-height: 1.6;
+}
+.landing-card {
+  background: rgba(255,255,255,0.06); border-radius: 8px;
+  padding: 20px; margin-bottom: 20px;
+}
+.feedback-card { text-align: center; }
+.feedback-btn {
+  display: inline-block; margin-top: 12px; padding: 10px 28px;
+  background: #27ae60; color: white; font-size: 1.0em; font-weight: bold;
+  border-radius: 8px; text-decoration: none; transition: background 0.2s;
+}
+.feedback-btn:hover { background: #2ecc71; }
+.landing-heading { color: white; font-size: 1.6em; margin: 32px 0 16px; }
+.landing-text { margin-bottom: 20px; }
+.landing-text strong { color: white; }
+.highlight { color: #2ecc71; font-weight: bold; }
+.mode-card { border-left: 4px solid #27ae60; }
+.mode-card h3 { color: white; margin-bottom: 8px; font-size: 1.2em; }
+.mode-card p { color: #ccc; }
+.landscape-note { font-size: 0.85em; color: #888; text-align: center; margin: 20px 0; }
+.landing-caption { color: #aaa; margin-bottom: 8px; }
+.alpha-links { display: flex; flex-direction: column; gap: 8px; }
+.alpha-links a { color: #2ecc71; text-decoration: none; }
+.alpha-links a:hover { text-decoration: underline; }
+.landing-divider { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 32px 0 20px; }
+.experimental-note { color: #777; font-style: italic; font-size: 0.9em; }
+.wifi-note { color: #f59e0b; font-size: 0.85em; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+'use strict';
+
+var AudioSys = (function() {
+  var ctx = null;
+  function init() {
+    if (!ctx) {
+      var WA = window.AudioContext || window.webkitAudioContext;
+      if (WA) ctx = new WA();
+    }
+    if (ctx && ctx.state === 'suspended') ctx.resume();
+  }
+  function playTone(freq, type, duration, vol) {
+    if (!ctx) return;
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  }
+  return {
+    init: init,
+    tic: function() { playTone(600, 'sine', 0.1, 0.1); },
+    slapshot: function() { playTone(250, 'square', 0.1, 0.2); },
+    whistle: function() {
+      playTone(2000, 'square', 0.15, 0.05);
+      setTimeout(function() { playTone(2000, 'square', 0.25, 0.05); }, 200);
+    }
+  };
+})();
+
+// ==================== GAME CONSTANTS ====================
+const TICK_MS = 33; // ~30fps
+const DRIFT_SPEED = 0.18;
+const BURST_SPEED = 0.55;
+const PASS_SPEED = 1.2;
+const PUCK_DECELERATION = 0.005;
+const SETTLING_TICKS = 15; // 500ms at 30fps
+const BURST_COOLDOWN_TICKS = 60; // 2000ms
+const DISPOSSESSION_COOLDOWN_TICKS = 45; // 1500ms
+const HOME_PULL = 0.02;
+const ARRIVAL_DIST = 2;
+const GK_HOME_X_MIN = 2;
+const GK_HOME_X_MAX = 8;
+const GK_AWAY_X_MIN = 92;
+const GK_AWAY_X_MAX = 98;
+const LOOSE_BALL_TICKS = 10; // 300ms
+const SHOOT_RANGE_X = 45;
+const GOAL_CELEBRATION_TICKS = 45; // 1.5s
+const FACEOFF_PAUSE_TICKS = 30; // 1s
+const CPU_STRATEGY_INTERVAL = 60; // ~2 seconds
+const CPU_REACTION_DELAY_TICKS = 9; // 300ms
+const CPU_PASS_ERROR_CHANCE = 0.15;
+const SHOT_ANIM_TICKS = 15;
+const PERIOD_REAL_S = 120; // 2 real minutes per period
+const GAME_TIME_SCALE = 10; // 1 real second = 10 game seconds => 20 game-minutes per period
+
+// ==================== SEEDED PRNG (mulberry32) ====================
+function createPRNG(seed) {
+  var state = seed;
+  return function() {
+    state = (state + 0x6D2B79F5) | 0;
+    var t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+var gameRNG = createPRNG(Date.now());
+
+function reseedRNG(seed) {
+  gameRNG = createPRNG(seed);
+}
+
+// ==================== NETWORK MODULE ====================
+var localTeam = 'home';
+
+var netState = {
+  peer: null,
+  conn: null,
+  isHost: false,
+  isMultiplayer: false,
+  roomCode: null,
+  connected: false,
+  disconnectTimer: null,
+};
+
+function generateRoomCode() {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+}
+
+function hostGame(onCode, onConnected, onData, onDisconnect) {
+  var code = generateRoomCode();
+  netState.roomCode = code;
+  netState.isHost = true;
+  netState.isMultiplayer = true;
+  localTeam = 'home';
+  onCode(code);
+
+  var peer = new Peer('darkice-' + code);
+  netState.peer = peer;
+
+  peer.on('open', function() {
+    // Waiting for joiner
+  });
+
+  peer.on('connection', function(conn) {
+    netState.conn = conn;
+    conn.on('open', function() {
+      netState.connected = true;
+      var seed = Date.now();
+      conn.send(JSON.stringify({ type: '__SEED__', seed: seed }));
+      reseedRNG(seed);
+      onConnected();
+    });
+    conn.on('data', function(data) {
+      var msg = JSON.parse(data);
+      if (msg.type !== '__SEED__') {
+        onData(msg);
+      }
+    });
+    conn.on('close', function() {
+      netState.connected = false;
+      onDisconnect();
+    });
+  });
+
+  peer.on('error', function(err) {
+    console.error('PeerJS host error:', err);
+  });
+}
+
+function joinGame(code, onConnected, onData, onDisconnect) {
+  netState.roomCode = code;
+  netState.isHost = false;
+  netState.isMultiplayer = true;
+  localTeam = 'away';
+
+  var peer = new Peer();
+  netState.peer = peer;
+
+  peer.on('open', function() {
+    var conn = peer.connect('darkice-' + code);
+    netState.conn = conn;
+    conn.on('open', function() {
+      netState.connected = true;
+    });
+    conn.on('data', function(data) {
+      var msg = JSON.parse(data);
+      if (msg.type === '__SEED__') {
+        reseedRNG(msg.seed);
+        onConnected();
+      } else {
+        onData(msg);
+      }
+    });
+    conn.on('close', function() {
+      netState.connected = false;
+      onDisconnect();
+    });
+  });
+
+  peer.on('error', function(err) {
+    console.error('PeerJS join error:', err);
+  });
+}
+
+function cleanupNet() {
+  if (netState.conn) { netState.conn.close(); netState.conn = null; }
+  if (netState.peer) { netState.peer.destroy(); netState.peer = null; }
+  netState.connected = false;
+  netState.isMultiplayer = false;
+  netState.roomCode = null;
+  localTeam = 'home';
+}
+
+function getDist(x1, y1, x2, y2) {
+  return Math.sqrt((x1 - x2) ** 2 + (y1 - y2) ** 2);
+}
+
+function getInterceptionChance(d) {
+  if (d > 3) return 0;
+  if (d <= 0.5) return 0.70;
+  if (d <= 1) return 0.40;
+  if (d <= 2) return 0.15;
+  return 0.05;
+}
+
+function getTackleChance(d) {
+  if (d > 3) return 0;
+  if (d <= 0.5) return 0.80;
+  if (d <= 1) return 0.50;
+  if (d <= 2) return 0.25;
+  return 0.10;
+}
+
+function getAttackGoalX(team, period) {
+  // Odd periods (1, 3): home attacks right, away attacks left
+  // Even periods (2): flipped
+  if (period % 2 === 1) return team === 'home' ? 100 : 0;
+  return team === 'home' ? 0 : 100;
+}
+
+// ==================== FORMATIONS (3v3 + Goalie) ====================
+const HOME_FORMATION = [
+  { role: 'G',  x: 5,  y: 50 },
+  { role: 'LW', x: 40, y: 25 },
+  { role: 'C',  x: 40, y: 50 },
+  { role: 'RW', x: 40, y: 75 },
+];
+
+const AWAY_FORMATION = [
+  { role: 'G',  x: 95, y: 50 },
+  { role: 'LW', x: 60, y: 75 },
+  { role: 'C',  x: 60, y: 50 },
+  { role: 'RW', x: 60, y: 25 },
+];
+
+// ==================== INITIAL STATE ====================
+function createInitialState() {
+  const players = [];
+  HOME_FORMATION.forEach((f, i) => {
+    players.push({
+      id: 'home_' + i, team: 'home', role: f.role,
+      x: f.x, y: f.y, homeX: f.x, homeY: f.y,
+      vx: 0, vy: 0, hasBall: i === 2, // Center starts with puck
+      burstTarget: null, burstCooldownUntil: 0, route: [],
+      settlingUntil: 0, cooldownUntil: 0,
+    });
+  });
+  AWAY_FORMATION.forEach((f, i) => {
+    players.push({
+      id: 'away_' + i, team: 'away', role: f.role,
+      x: f.x, y: f.y, homeX: f.x, homeY: f.y,
+      vx: 0, vy: 0, hasBall: false,
+      burstTarget: null, burstCooldownUntil: 0, route: [],
+      settlingUntil: 0, cooldownUntil: 0,
+    });
+  });
+
+  // Move center to center ice for opening faceoff
+  var faceoffPlayer = players.find(function(p) { return p.id === 'home_2'; });
+  faceoffPlayer.x = 50;
+  faceoffPlayer.y = 50;
+
+  return {
+    ball: { x: 50, y: 50, carrier: 'home_2', loose: false, vx: 0, vy: 0,
+            lastCarrierId: null, looseTimer: 0 },
+    players,
+    score: { home: 0, away: 0 },
+    clock: { elapsed: 0, period: 1, running: false },
+    possession: 'home',
+    phase: 'title',
+    tick: 0,
+    passBall: null,
+    passIdCounter: 0,
+    shot: null,
+    goalTimer: 0,
+    lastGoalBy: null,
+    kickoffTimer: 0,
+    cpuThreatDetectedTick: null,
+    cpuNextStrategyTick: 0,
+    saveDisplayTimer: 0,
+    selectedDefender: null,
+  };
+}
+
+// ==================== PURE UPDATE FUNCTION ====================
+function updateGame(state, action) {
+  switch (action.type) {
+    case 'START_GAME': return startGame(state);
+    case 'TICK': return gameTick(state);
+    case 'TAP_PLAYER': return tapPlayer(state, action.playerId);
+    case 'TAP_FIELD': return tapField(state, action.x, action.y);
+    case 'SHOOT': return executeShot(state, state.ball.carrier, action.aimX, action.aimY);
+    case 'TAP_DEFENDER': return tapDefender(state, action.playerId);
+    case 'SELECT_DEFENDER': return selectDefender(state, action.playerId);
+    case 'POSITION_DEFENDER': return positionDefender(state, action.x, action.y);
+    case 'DRAG_PLAYER': return dragPlayer(state, action.playerId, action.x, action.y);
+    case 'THROUGH_BALL': return throughBall(state, action.x, action.y);
+    case 'SET_ROUTE': return setRoute(state, action.playerId, action.route);
+    case 'START_NEXT_PERIOD': return startNextPeriod(state);
+    case 'PLAY_AGAIN': return createInitialState();
+    default: return state;
+  }
+}
+
+function startGame(state) {
+  return { ...state, phase: 'faceoff_pause', kickoffTimer: state.tick + FACEOFF_PAUSE_TICKS };
+}
+
+function gameTick(state) {
+  if (state.phase === 'title' || state.phase === 'period_break' || state.phase === 'fulltime') return state;
+
+  if (state.phase === 'faceoff_pause') {
+    let s = { ...state, tick: state.tick + 1 };
+    if (s.tick >= s.kickoffTimer) {
+      return { ...s, phase: 'play', clock: { ...s.clock, running: true } };
+    }
+    return s;
+  }
+
+  if (state.phase === 'goal_celebration') {
+    let s = { ...state, tick: state.tick + 1 };
+    if (s.tick >= s.goalTimer) {
+      s = resetForFaceoff(s);
+      return { ...s, phase: 'faceoff_pause', kickoffTimer: s.tick + FACEOFF_PAUSE_TICKS };
+    }
+    return s;
+  }
+
+  if (state.phase === 'save_display') {
+    var s2 = { ...state, tick: state.tick + 1 };
+    if (s2.tick >= s2.saveDisplayTimer) {
+      return { ...s2, phase: 'play', clock: { ...s2.clock, running: true } };
+    }
+    return s2;
+  }
+
+  if (state.phase === 'shot') {
+    return updateShotAnimation(state);
+  }
+
+  if (state.phase !== 'play') return state;
+
+  let s = { ...state, tick: state.tick + 1, players: state.players.map(p => ({ ...p })) };
+  s.ball = { ...s.ball };
+  if (s.passBall) {
+    s.passBall = { ...s.passBall, trail: s.passBall.trail.map(t => ({ ...t })),
+      checkedBy: s.passBall.checkedBy ? new Set(s.passBall.checkedBy) : new Set() };
+  }
+
+  // Update clock
+  s.clock = { ...s.clock, elapsed: s.clock.elapsed + 1 };
+
+  // Check period breaks and full time
+  const gameSeconds = s.clock.elapsed * TICK_MS / 1000 * GAME_TIME_SCALE;
+  if (s.clock.period === 1 && gameSeconds >= 1200) {
+    return { ...s, phase: 'period_break', clock: { ...s.clock, running: false } };
+  }
+  if (s.clock.period === 2 && gameSeconds >= 2400) {
+    return { ...s, phase: 'period_break', clock: { ...s.clock, running: false } };
+  }
+  if (s.clock.period === 3 && gameSeconds >= 3600) {
+    return { ...s, phase: 'fulltime', clock: { ...s.clock, running: false } };
+  }
+
+  s = updatePassBall(s);
+  s = driftPlayers(s);
+  s = routeMovement(s);
+  s = burstMovement(s);
+  s = checkTackles(s);
+  s = updateLooseBall(s);
+  s = cpuPossession(s);
+  if (s.phase !== 'play') return s;
+  s = clampPlayers(s);
+  s = attachBallToCarrier(s);
+
+  return s;
+}
+
+function updatePassBall(s) {
+  if (!s.passBall) return s;
+  const pb = s.passBall;
+
+  // Determine target position
+  let targetX, targetY;
+  if (pb.toId) {
+    const target = s.players.find(p => p.id === pb.toId);
+    if (!target) { s.passBall = null; return s; }
+    targetX = target.x;
+    targetY = target.y;
+  } else if (pb.targetPos) {
+    targetX = pb.targetPos.x;
+    targetY = pb.targetPos.y;
+  } else {
+    s.passBall = null;
+    return s;
+  }
+
+  const dx = targetX - pb.x;
+  const dy = targetY - pb.y;
+  const d = Math.sqrt(dx * dx + dy * dy);
+
+  if (d < ARRIVAL_DIST) {
+    if (pb.toId) {
+      const target = s.players.find(p => p.id === pb.toId);
+      target.hasBall = true;
+      target.settlingUntil = s.tick + SETTLING_TICKS;
+      s.ball.carrier = target.id;
+      s.ball.x = target.x;
+      s.ball.y = target.y;
+      s.ball.loose = false;
+      s.ball.vx = 0;
+      s.ball.vy = 0;
+    } else {
+      // Errant pass — puck keeps sliding in pass direction
+      s.ball.x = targetX;
+      s.ball.y = targetY;
+      s.ball.loose = true;
+      s.ball.looseTimer = s.tick + LOOSE_BALL_TICKS;
+      s.ball.lastCarrierId = null;
+      // Give puck velocity in pass direction
+      var pdx = targetX - pb.fromX;
+      var pdy = targetY - pb.fromY;
+      var pdist = Math.sqrt(pdx * pdx + pdy * pdy) || 1;
+      s.ball.vx = (pdx / pdist) * PASS_SPEED * 0.5;
+      s.ball.vy = (pdy / pdist) * PASS_SPEED * 0.5;
+    }
+    s.passBall = null;
+    return s;
+  }
+
+  // Move puck toward target
+  const vx = (dx / d) * PASS_SPEED;
+  const vy = (dy / d) * PASS_SPEED;
+  pb.x += vx;
+  pb.y += vy;
+
+  // Board collision during pass
+  var boardHit = false;
+  var refVx = vx;
+  var refVy = vy;
+
+  if (pb.x <= 0 || pb.x >= 100) {
+    if (pb.y < 35 || pb.y > 65) {
+      // End boards outside goal mouth — bounce
+      refVx = -vx * 0.8;
+      refVy = vy * 0.8;
+      s.ball.x = pb.x <= 0 ? 0.5 : 99.5;
+      s.ball.y = pb.y;
+      boardHit = true;
+    }
+    // Inside goal mouth: goal/save logic handles it via shot system
+  }
+  if (pb.y <= 0 || pb.y >= 100) {
+    refVy = -vy * 0.8;
+    if (!boardHit) {
+      refVx = vx * 0.8;
+      s.ball.x = pb.x;
+    }
+    s.ball.y = pb.y <= 0 ? 0.5 : 99.5;
+    boardHit = true;
+  }
+
+  if (boardHit) {
+    // Order: trajectory calculated (vx/vy above), now destroy pass, set velocity, make loose
+    s.passBall = null;
+    s.ball.vx = refVx;
+    s.ball.vy = refVy;
+    s.ball.loose = true;
+    s.ball.looseTimer = s.tick + LOOSE_BALL_TICKS;
+    s.ball.lastCarrierId = null;
+    s.ball.carrier = null;
+    return s;
+  }
+
+  // Check interceptions
+  const opposingTeam = pb.fromTeam === 'home' ? 'away' : 'home';
+  if (!pb.checkedBy) pb.checkedBy = new Set();
+
+  for (var i = 0; i < s.players.length; i++) {
+    var p = s.players[i];
+    if (p.team !== opposingTeam) continue;
+
+    var pDist = getDist(p.x, p.y, pb.x, pb.y);
+
+    // 1. Hard collision: ALWAYS evaluate first, even if previously checked
+    if (pDist <= 2.0) {
+      p.hasBall = true;
+      p.settlingUntil = s.tick + SETTLING_TICKS;
+      s.ball.carrier = p.id;
+      s.ball.x = p.x;
+      s.ball.y = p.y;
+      s.ball.loose = false;
+      s.ball.vx = 0;
+      s.ball.vy = 0;
+      s.possession = p.team;
+      s.passBall = null;
+      s.selectedDefender = null;
+      s.cpuThreatDetectedTick = null;
+      s.cpuNextStrategyTick = s.tick + 30;
+      return s;
+    }
+
+    // 2. Out of range -- skip
+    if (pDist > 3) continue;
+
+    // 3. Probabilistic check: only evaluate once per pass
+    if (pb.checkedBy.has(p.id)) continue;
+    pb.checkedBy.add(p.id);
+
+    if (gameRNG() < getInterceptionChance(pDist)) {
+      p.hasBall = true;
+      p.settlingUntil = s.tick + SETTLING_TICKS;
+      s.ball.carrier = p.id;
+      s.ball.x = p.x;
+      s.ball.y = p.y;
+      s.ball.loose = false;
+      s.ball.vx = 0;
+      s.ball.vy = 0;
+      s.possession = p.team;
+      s.passBall = null;
+      s.selectedDefender = null;
+      s.cpuThreatDetectedTick = null;
+      s.cpuNextStrategyTick = s.tick + 30;
+      return s;
+    }
+  }
+
+  // Update trail
+  pb.trail.push({ x: pb.x, y: pb.y, opacity: 1 });
+  if (pb.trail.length > 4) pb.trail.shift();
+  pb.trail.forEach(t => { t.opacity *= 0.6; });
+
+  s.ball.x = pb.x;
+  s.ball.y = pb.y;
+  s.ball.carrier = null;
+
+  return s;
+}
+
+function driftPlayers(s) {
+  const ballX = s.ball.x;
+  const ballY = s.ball.y;
+  const period = s.clock.period;
+
+  for (const p of s.players) {
+    // Player-drawn routes and burst targets override ALL drift logic
+    if (p.route && p.route.length > 0) continue;
+    if (p.burstTarget) continue;
+
+    if (p.role === 'G') {
+      const targetY = ballY;
+      const dy = targetY - p.y;
+      const dLen = Math.abs(dy);
+      if (dLen > 0.5) { p.y += (dy / dLen) * DRIFT_SPEED * 0.7; }
+      const hpx = p.homeX - p.x;
+      p.x += hpx * 0.05;
+      // Clamp GK based on which side of field their home is
+      if (p.homeX < 50) {
+        p.x = Math.max(GK_HOME_X_MIN, Math.min(GK_HOME_X_MAX, p.x));
+      } else {
+        p.x = Math.max(GK_AWAY_X_MIN, Math.min(GK_AWAY_X_MAX, p.x));
+      }
+      continue;
+    }
+
+    let driftX = 0, driftY = 0;
+    const attackDir = getAttackGoalX(p.team, period) > 50 ? 1 : -1;
+
+    // All skaters drift forward with slight ball-tracking
+    driftX = DRIFT_SPEED * 0.4 * attackDir;
+    driftY = (ballY - p.y) * DRIFT_SPEED * 0.02;
+
+    p.x += driftX;
+    p.y += driftY;
+
+    const pullX = (p.homeX - p.x) * HOME_PULL * 1.5;
+    const pullY = (p.homeY - p.y) * HOME_PULL * 1.5;
+    p.x += pullX;
+    p.y += pullY;
+
+    p.x += (gameRNG() - 0.5) * 0.04;
+    p.y += (gameRNG() - 0.5) * 0.04;
+  }
+
+  return s;
+}
+
+function routeMovement(s) {
+  for (var i = 0; i < s.players.length; i++) {
+    var p = s.players[i];
+    if (!p.route || p.route.length === 0) continue;
+
+    var target = p.route[0];
+    var dx = target.x - p.x;
+    var dy = target.y - p.y;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < ARRIVAL_DIST) {
+      // Arrived at this waypoint -- consume it
+      p.route = p.route.slice(1);
+      // If more waypoints remain, move toward the next one this same tick
+      if (p.route.length > 0) {
+        var next = p.route[0];
+        var ndx = next.x - p.x;
+        var ndy = next.y - p.y;
+        var ndist = Math.sqrt(ndx * ndx + ndy * ndy);
+        if (ndist > 0.1) {
+          p.x += (ndx / ndist) * BURST_SPEED;
+          p.y += (ndy / ndist) * BURST_SPEED;
+        }
+      }
+      continue;
+    }
+
+    p.x += (dx / dist) * BURST_SPEED;
+    p.y += (dy / dist) * BURST_SPEED;
+  }
+  return s;
+}
+
+function burstMovement(s) {
+  for (const p of s.players) {
+    if (!p.burstTarget) continue;
+    const dx = p.burstTarget.x - p.x;
+    const dy = p.burstTarget.y - p.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < ARRIVAL_DIST) {
+      // Arrived — clear burst, start cooldown
+      p.burstTarget = null;
+      p.burstCooldownUntil = s.tick + BURST_COOLDOWN_TICKS;
+      continue;
+    }
+
+    p.x += (dx / dist) * BURST_SPEED;
+    p.y += (dy / dist) * BURST_SPEED;
+  }
+  return s;
+}
+
+function attachBallToCarrier(s) {
+  if (s.ball.carrier && !s.passBall) {
+    const carrier = s.players.find(p => p.id === s.ball.carrier);
+    if (carrier) {
+      if (carrier.settlingUntil > s.tick) {
+        // Settling jitter
+        s.ball.x = carrier.x + (gameRNG() - 0.5) * 0.6;
+        s.ball.y = carrier.y + (gameRNG() - 0.5) * 0.6;
+      } else {
+        s.ball.x = carrier.x;
+        s.ball.y = carrier.y;
+      }
+    }
+  }
+  return s;
+}
+
+function clampPlayers(s) {
+  for (const p of s.players) {
+    // In hockey, ALL players are clamped to the rink (no OOB)
+    p.x = Math.max(0.5, Math.min(99.5, p.x));
+    p.y = Math.max(0.5, Math.min(99.5, p.y));
+  }
+  return s;
+}
+
+// ==================== GAME LOGIC ====================
+
+function checkTackles(s) {
+  if (!s.ball.carrier || s.ball.loose || s.passBall) return s;
+  const carrier = s.players.find(p => p.id === s.ball.carrier);
+  if (!carrier) return s;
+
+  const opposingTeam = carrier.team === 'home' ? 'away' : 'home';
+  for (const p of s.players) {
+    if (p.team !== opposingTeam) continue;
+    if (p.cooldownUntil > s.tick) continue;
+    const d = getDist(p.x, p.y, carrier.x, carrier.y);
+    if (d > 3) continue;
+    if (gameRNG() < getTackleChance(d)) {
+      // Check successful -- puck goes directly to checker
+      carrier.hasBall = false;
+      carrier.burstTarget = null;
+      carrier.route = [];
+      carrier.cooldownUntil = s.tick + DISPOSSESSION_COOLDOWN_TICKS;
+
+      p.hasBall = true;
+      p.settlingUntil = s.tick + SETTLING_TICKS;
+      s.ball.carrier = p.id;
+      s.ball.x = p.x;
+      s.ball.y = p.y;
+      s.ball.loose = false;
+      s.ball.vx = 0;
+      s.ball.vy = 0;
+      s.ball.lastCarrierId = carrier.id;
+      s.possession = p.team;
+      s.selectedDefender = null;
+      s.cpuThreatDetectedTick = null;
+      s.cpuNextStrategyTick = s.tick + 30;
+
+      // Auto-burst: winning player moves away from contact
+      var tdx = p.x - carrier.x;
+      var tdy = p.y - carrier.y;
+      var awayDist = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
+      p.burstTarget = {
+        x: Math.max(1, Math.min(99, p.x + (tdx / awayDist) * 6.5)),
+        y: Math.max(1, Math.min(99, p.y + (tdy / awayDist) * 6.5))
+      };
+
+      return s;
+    }
+  }
+  return s;
+}
+
+function updateLooseBall(s) {
+  if (!s.ball.loose) return s;
+
+  // Apply velocity movement (puck slides regardless of pickup timer)
+  s.ball.x += s.ball.vx;
+  s.ball.y += s.ball.vy;
+
+  // Board bounces for loose puck
+  if (s.ball.x <= 0 || s.ball.x >= 100) {
+    if (s.ball.y < 35 || s.ball.y > 65) {
+      // End boards outside goal mouth — bounce
+      s.ball.vx *= -0.8;
+      s.ball.x = s.ball.x <= 0 ? 0.5 : 99.5;
+    }
+    // Inside goal mouth: don't bounce (goal/save logic handles it)
+  }
+  if (s.ball.y <= 0 || s.ball.y >= 100) {
+    s.ball.vy *= -0.8;
+    s.ball.y = s.ball.y <= 0 ? 0.5 : 99.5;
+  }
+
+  // Apply deceleration AFTER movement
+  s.ball.vx *= (1 - PUCK_DECELERATION);
+  s.ball.vy *= (1 - PUCK_DECELERATION);
+  if (Math.abs(s.ball.vx) < 0.01 && Math.abs(s.ball.vy) < 0.01) {
+    s.ball.vx = 0;
+    s.ball.vy = 0;
+  }
+
+  // Pickup check (only after looseTimer expires)
+  if (s.tick < s.ball.looseTimer) return s;
+
+  let nearestPlayer = null;
+  let nearestDist = Infinity;
+  for (const p of s.players) {
+    if (p.cooldownUntil > s.tick) continue;
+    const d = getDist(p.x, p.y, s.ball.x, s.ball.y);
+    if (d < nearestDist) {
+      nearestDist = d;
+      nearestPlayer = p;
+    }
+  }
+
+  if (nearestPlayer) {
+    nearestPlayer.hasBall = true;
+    nearestPlayer.settlingUntil = s.tick + SETTLING_TICKS;
+    s.ball.carrier = nearestPlayer.id;
+    s.ball.x = nearestPlayer.x;
+    s.ball.y = nearestPlayer.y;
+    s.ball.loose = false;
+    s.ball.vx = 0;
+    s.ball.vy = 0;
+    s.ball.lastCarrierId = null;
+    s.possession = nearestPlayer.team;
+    s.selectedDefender = null;
+    s.cpuThreatDetectedTick = null;
+    s.cpuNextStrategyTick = s.tick + 30;
+  }
+  return s;
+}
+
+function cpuPossession(s) {
+  if (netState.isMultiplayer && s.possession === 'away') return s;
+  if (s.possession !== 'away') return s;
+  if (!s.ball.carrier || !s.ball.carrier.startsWith('away')) return s;
+  if (s.passBall || s.ball.loose) return s;
+
+  const carrier = s.players.find(p => p.id === s.ball.carrier);
+  if (!carrier || carrier.settlingUntil > s.tick) return s;
+
+  // Check for immediate threat (home skater within 5 units)
+  const hasThreat = s.players.some(p =>
+    p.team === 'home' && getDist(p.x, p.y, carrier.x, carrier.y) < 5
+  );
+
+  if (hasThreat) {
+    if (s.cpuThreatDetectedTick == null) {
+      s.cpuThreatDetectedTick = s.tick;
+    }
+    if (s.tick - s.cpuThreatDetectedTick >= CPU_REACTION_DELAY_TICKS) {
+      s.cpuThreatDetectedTick = null;
+      // Reactive: shoot if possible, else pass
+      if (canCpuShoot(s, carrier)) {
+        var cpuAimX1 = getAttackGoalX('away', s.clock.period);
+        var cpuAimY1 = 38 + gameRNG() * 24;
+        return executeShot(s, carrier.id, cpuAimX1, cpuAimY1);
+      }
+      return cpuPass(s, carrier, 'reactive');
+    }
+  } else {
+    s.cpuThreatDetectedTick = null;
+  }
+
+  // Scheduled strategy (every ~60 ticks, only if no threat)
+  if (!hasThreat && s.tick >= (s.cpuNextStrategyTick || 0)) {
+    s.cpuNextStrategyTick = s.tick + CPU_STRATEGY_INTERVAL;
+
+    if (canCpuShoot(s, carrier) && gameRNG() < 0.30) {
+      var cpuAimX2 = getAttackGoalX('away', s.clock.period);
+      var cpuAimY2 = 38 + gameRNG() * 24;
+      return executeShot(s, carrier.id, cpuAimX2, cpuAimY2);
+    }
+
+    const roll = gameRNG();
+    if (roll < 0.70) {
+      return cpuPass(s, carrier, 'forward');
+    } else if (roll < 0.90) {
+      return cpuPass(s, carrier, 'safe');
+    } else {
+      if (carrier.burstCooldownUntil <= s.tick && carrier.role !== 'G') {
+        const bdir = getAttackGoalX('away', s.clock.period) > 50 ? 1 : -1;
+        carrier.burstTarget = {
+          x: Math.max(1, Math.min(99, carrier.x + bdir * 15)),
+          y: Math.max(1, Math.min(99, carrier.y + (gameRNG() - 0.5) * 10))
+        };
+      }
+      return s;
+    }
+  }
+  return s;
+}
+
+function canCpuShoot(s, carrier) {
+  const goalX = getAttackGoalX('away', s.clock.period);
+  const distToGoal = Math.abs(goalX - carrier.x);
+  if (distToGoal > SHOOT_RANGE_X) return false;
+  return !s.players.some(p =>
+    p.team === 'home' && p.role !== 'G' &&
+    getDist(p.x, p.y, carrier.x, carrier.y) < 3 &&
+    Math.abs(goalX - p.x) < Math.abs(goalX - carrier.x)
+  );
+}
+
+function cpuPass(s, carrier, type) {
+  var teammates = s.players.filter(function(p) {
+    if (p.team !== 'away') return false;
+    if (p.id === carrier.id) return false;
+    if (p.id === s.ball.lastCarrierId) return false;
+    return true;
+  });
+  if (teammates.length === 0) {
+    teammates = s.players.filter(function(p) { return p.team === 'away' && p.id !== carrier.id; });
+  }
+  if (teammates.length === 0) return s;
+
+  let target;
+  if (type === 'forward') {
+    const goalX = getAttackGoalX('away', s.clock.period);
+    const fwd = teammates.filter(p => Math.abs(goalX - p.x) < Math.abs(goalX - carrier.x));
+    const pool = fwd.length > 0 ? fwd : teammates;
+    target = pool.reduce((best, p) => {
+      const d = getDist(p.x, p.y, carrier.x, carrier.y);
+      const bd = getDist(best.x, best.y, carrier.x, carrier.y);
+      return d < bd ? p : best;
+    });
+  } else if (type === 'reactive') {
+    const sorted = teammates.slice().sort((a, b) => {
+      const gx = getAttackGoalX('away', s.clock.period);
+      const da = getDist(a.x, a.y, carrier.x, carrier.y) + (Math.abs(gx - a.x) < Math.abs(gx - carrier.x) ? -5 : 0);
+      const db = getDist(b.x, b.y, carrier.x, carrier.y) + (Math.abs(gx - b.x) < Math.abs(gx - carrier.x) ? -5 : 0);
+      return da - db;
+    });
+    target = sorted[0];
+  } else {
+    target = teammates.reduce((best, p) => {
+      const d = getDist(p.x, p.y, carrier.x, carrier.y);
+      const bd = getDist(best.x, best.y, carrier.x, carrier.y);
+      return d < bd ? p : best;
+    });
+  }
+
+  carrier.hasBall = false;
+  carrier.burstTarget = null;
+  s.ball.lastCarrierId = carrier.id;
+  s.ball.carrier = null;
+  s.passIdCounter = (s.passIdCounter || 0) + 1;
+
+  var isErrant = gameRNG() < CPU_PASS_ERROR_CHANCE;
+  if (isErrant) {
+    const angle = gameRNG() * Math.PI * 2;
+    const errDist = 2 + gameRNG();
+    s.passBall = {
+      fromX: carrier.x, fromY: carrier.y,
+      toId: null,
+      targetPos: {
+        x: Math.max(1, Math.min(99, target.x + Math.cos(angle) * errDist)),
+        y: Math.max(1, Math.min(99, target.y + Math.sin(angle) * errDist)),
+      },
+      x: carrier.x, y: carrier.y,
+      trail: [], fromTeam: 'away',
+      passId: s.passIdCounter, checkedBy: new Set(),
+    };
+  } else {
+    s.passBall = {
+      fromX: carrier.x, fromY: carrier.y,
+      toId: target.id, targetPos: null,
+      x: carrier.x, y: carrier.y,
+      trail: [], fromTeam: 'away',
+      passId: s.passIdCounter, checkedBy: new Set(),
+    };
+  }
+
+  s.cpuThreatDetectedTick = null;
+  return s;
+}
+
+function executeShot(state, carrierId, aimX, aimY) {
+  if (!carrierId) return state;
+  var s = { ...state, players: state.players.map(function(p) { return { ...p }; }) };
+  s.ball = { ...s.ball };
+
+  var carrier = s.players.find(function(p) { return p.id === carrierId; });
+  if (!carrier) return state;
+
+  var shootingTeam = carrier.team;
+  var goalX = getAttackGoalX(shootingTeam, s.clock.period);
+  var targetX = goalX;
+  var distToGoal = Math.abs(goalX - carrier.x);
+
+  if (distToGoal > SHOOT_RANGE_X) return state;
+
+  // Clamp aimY to goal mouth range (38-62)
+  var clampedAimY = Math.max(38, Math.min(62, aimY != null ? aimY : 50));
+
+  // Apply scatter based on distance
+  var scatterRange = Math.max(0, (distToGoal - 5) * 0.15);
+  var targetY = clampedAimY + (gameRNG() - 0.5) * scatterRange;
+
+  // Distance factor: 50% at 5 units, 5% at 25 units
+  var distFactor;
+  if (distToGoal <= 5) distFactor = 0.50;
+  else if (distToGoal >= 25) distFactor = 0.05;
+  else distFactor = 0.50 - 0.45 * (distToGoal - 5) / 20;
+
+  // Aim factor: shots aimed at corners are harder to save but more likely to go wide
+  var aimOffCenter = Math.abs(clampedAimY - 50) / 12;
+  var cornerSaveBonus = aimOffCenter * 0.25;
+  var cornerWideBonus = aimOffCenter * 0.15;
+
+  // Keeper position factor
+  var keeperId = shootingTeam === 'home' ? 'away_0' : 'home_0';
+  var keeper = s.players.find(function(p) { return p.id === keeperId; });
+  var keeperFactor = 1.0;
+  if (keeper) {
+    var keeperDist = Math.abs(keeper.y - clampedAimY);
+    keeperFactor = Math.max(0.4, 1.0 - keeperDist * 0.02);
+  }
+
+  // Defender factor
+  var defFactor = 1.0;
+  for (var i = 0; i < s.players.length; i++) {
+    var p = s.players[i];
+    if (p.team === shootingTeam || p.role === 'G') continue;
+    if (getDist(p.x, p.y, carrier.x, carrier.y) < 3) { defFactor = 0.7; break; }
+  }
+
+  // Angle factor: 1.0 at center (y=50), 0.5 at edges
+  var angleFactor = 1.0 - 0.5 * (Math.abs(carrier.y - 50) / 50);
+
+  var baseChance = distFactor * angleFactor * defFactor;
+  var saveChance = (1 - baseChance) * (1 - cornerSaveBonus) * keeperFactor;
+  var wideChance = (1 - baseChance) * cornerWideBonus + (1 - baseChance) / 14;
+
+  var goalChance = baseChance;
+  var roll = gameRNG();
+
+  var result;
+  if (roll < goalChance) result = 'goal';
+  else if (roll < 1 - wideChance) result = 'save';
+  else result = 'wide';
+
+  // Adjust targetY based on result
+  if (result === 'wide') {
+    targetY = clampedAimY > 50 ? 65 + gameRNG() * 10 : 35 - gameRNG() * 10;
+  }
+
+  if (result === 'save') {
+    var saveKeeperId = shootingTeam === 'home' ? 'away_0' : 'home_0';
+    var saveKeeper = s.players.find(function(p) { return p.id === saveKeeperId; });
+    if (saveKeeper) {
+      targetX = saveKeeper.x;
+    }
+  }
+
+  carrier.hasBall = false;
+  carrier.route = [];
+  s.ball.carrier = null;
+  s.passBall = null;
+  s.shot = {
+    result: result, shootingTeam: shootingTeam,
+    fromX: carrier.x, fromY: carrier.y,
+    targetX: targetX, targetY: targetY,
+    ticksTotal: SHOT_ANIM_TICKS, ticksElapsed: 0,
+  };
+  s.phase = 'shot';
+  return s;
+}
+
+function updateShotAnimation(state) {
+  let s = { ...state, tick: state.tick + 1, players: state.players.map(p => ({ ...p })) };
+  s.ball = { ...s.ball };
+  s.shot = { ...s.shot };
+
+  s.shot.ticksElapsed++;
+  const progress = s.shot.ticksElapsed / s.shot.ticksTotal;
+
+  s.ball.x = s.shot.fromX + (s.shot.targetX - s.shot.fromX) * progress;
+  s.ball.y = s.shot.fromY + (s.shot.targetY - s.shot.fromY) * progress;
+
+  // Keeper slides toward puck
+  const keeperId = s.shot.shootingTeam === 'home' ? 'away_0' : 'home_0';
+  const keeper = s.players.find(p => p.id === keeperId);
+  if (keeper) {
+    keeper.y += (s.shot.targetY - keeper.y) * 0.15;
+  }
+
+  if (s.shot.ticksElapsed >= s.shot.ticksTotal) {
+    if (s.shot.result === 'goal') {
+      if (s.shot.shootingTeam === 'home') s.score = { ...s.score, home: s.score.home + 1 };
+      else s.score = { ...s.score, away: s.score.away + 1 };
+      s.lastGoalBy = s.shot.shootingTeam;
+      s.phase = 'goal_celebration';
+      s.goalTimer = s.tick + GOAL_CELEBRATION_TICKS;
+      s.shot = null;
+    } else if (s.shot.result === 'save') {
+      var reboundX = s.shot.targetX < 50 ? 10 : 90;
+      s.ball.x = reboundX;
+      s.ball.y = 40 + gameRNG() * 20;
+      s.ball.loose = true;
+      s.ball.looseTimer = s.tick + LOOSE_BALL_TICKS;
+      s.ball.lastCarrierId = null;
+      s.ball.vx = 0;
+      s.ball.vy = 0;
+      s.phase = 'save_display';
+      s.saveDisplayTimer = s.tick + 30;
+      s.shot = null;
+    } else {
+      // Wide — goalie collects the puck
+      const defendingTeam = s.shot.shootingTeam === 'home' ? 'away' : 'home';
+      const gk = s.players.find(p => p.team === defendingTeam && p.role === 'G');
+      const gkX = s.shot.targetX < 50 ? 8 : 92;
+      s.ball.x = gkX;
+      s.ball.y = 50;
+      s.ball.loose = false;
+      s.ball.vx = 0;
+      s.ball.vy = 0;
+      s.possession = defendingTeam;
+      if (gk) {
+        gk.hasBall = true;
+        s.ball.carrier = gk.id;
+        gk.settlingUntil = s.tick + SETTLING_TICKS;
+      }
+      s.phase = 'play';
+      s.shot = null;
+      s.cpuThreatDetectedTick = null;
+      s.cpuNextStrategyTick = s.tick + 30;
+    }
+  }
+  return s;
+}
+
+function resetForFaceoff(s) {
+  const concededTeam = s.lastGoalBy === 'home' ? 'away' : 'home';
+  const period = s.clock.period;
+
+  const players = [];
+  HOME_FORMATION.forEach((f, i) => {
+    const fx = period % 2 === 0 ? 100 - f.x : f.x;
+    players.push({
+      id: 'home_' + i, team: 'home', role: f.role,
+      x: fx, y: f.y, homeX: fx, homeY: f.y,
+      vx: 0, vy: 0, hasBall: false,
+      burstTarget: null, burstCooldownUntil: 0, route: [],
+      settlingUntil: 0, cooldownUntil: 0,
+    });
+  });
+  AWAY_FORMATION.forEach((f, i) => {
+    const fx = period % 2 === 0 ? 100 - f.x : f.x;
+    players.push({
+      id: 'away_' + i, team: 'away', role: f.role,
+      x: fx, y: f.y, homeX: fx, homeY: f.y,
+      vx: 0, vy: 0, hasBall: false,
+      burstTarget: null, burstCooldownUntil: 0, route: [],
+      settlingUntil: 0, cooldownUntil: 0,
+    });
+  });
+
+  const kickoffId = concededTeam === 'home' ? 'home_2' : 'away_2';
+  const kickoffPlayer = players.find(p => p.id === kickoffId);
+  kickoffPlayer.x = 50;
+  kickoffPlayer.y = 50;
+  kickoffPlayer.hasBall = true;
+
+  return {
+    ...s, players,
+    ball: { x: 50, y: 50, carrier: kickoffId, loose: false, vx: 0, vy: 0,
+            lastCarrierId: null, looseTimer: 0 },
+    possession: concededTeam,
+    passBall: null, shot: null,
+    cpuThreatDetectedTick: null, cpuNextStrategyTick: 0,
+    selectedDefender: null,
+  };
+}
+
+function startNextPeriod(state) {
+  const nextPeriod = state.clock.period + 1;
+  const players = [];
+  HOME_FORMATION.forEach((f, i) => {
+    const fx = nextPeriod % 2 === 0 ? 100 - f.x : f.x;
+    players.push({
+      id: 'home_' + i, team: 'home', role: f.role,
+      x: fx, y: f.y, homeX: fx, homeY: f.y,
+      vx: 0, vy: 0, hasBall: false,
+      burstTarget: null, burstCooldownUntil: 0, route: [],
+      settlingUntil: 0, cooldownUntil: 0,
+    });
+  });
+  AWAY_FORMATION.forEach((f, i) => {
+    const fx = nextPeriod % 2 === 0 ? 100 - f.x : f.x;
+    players.push({
+      id: 'away_' + i, team: 'away', role: f.role,
+      x: fx, y: f.y, homeX: fx, homeY: f.y,
+      vx: 0, vy: 0, hasBall: false,
+      burstTarget: null, burstCooldownUntil: 0, route: [],
+      settlingUntil: 0, cooldownUntil: 0,
+    });
+  });
+
+  // P2: away center gets faceoff, P3: home center gets faceoff
+  const kickoffId = nextPeriod === 2 ? 'away_2' : 'home_2';
+  const kickoffPlayer = players.find(p => p.id === kickoffId);
+  kickoffPlayer.x = 50;
+  kickoffPlayer.y = 50;
+  kickoffPlayer.hasBall = true;
+
+  return {
+    ...state, players,
+    ball: { x: 50, y: 50, carrier: kickoffId, loose: false, vx: 0, vy: 0,
+            lastCarrierId: null, looseTimer: 0 },
+    possession: kickoffId.startsWith('home') ? 'home' : 'away',
+    clock: { ...state.clock, period: nextPeriod },
+    passBall: null, shot: null,
+    cpuThreatDetectedTick: null, cpuNextStrategyTick: 0,
+    phase: 'faceoff_pause', kickoffTimer: state.tick + FACEOFF_PAUSE_TICKS,
+    selectedDefender: null,
+  };
+}
+
+function tapDefender(state, playerId) {
+  if (state.phase !== 'play') return state;
+  if (state.ball.loose) return state;
+
+  const defender = state.players.find(p => p.id === playerId);
+  if (!defender) return state;
+  if (defender.burstCooldownUntil > state.tick) return state;
+
+  const carrier = state.players.find(p => p.id === state.ball.carrier);
+  if (!carrier) return state;
+
+  const s = { ...state, players: state.players.map(p => ({ ...p })) };
+  const d = s.players.find(p => p.id === defender.id);
+  d.burstTarget = { x: carrier.x, y: carrier.y };
+  s.selectedDefender = null;
+  return s;
+}
+
+function selectDefender(state, playerId) {
+  if (state.phase !== 'play') return state;
+  if (state.possession !== 'away') return state;
+
+  var defender = state.players.find(function(p) { return p.id === playerId; });
+  if (!defender || defender.team !== 'home') return state;
+
+  if (state.selectedDefender === playerId) {
+    return { ...state, selectedDefender: null };
+  }
+
+  return { ...state, selectedDefender: playerId };
+}
+
+function positionDefender(state, x, y) {
+  if (state.phase !== 'play') return state;
+  if (state.possession !== 'away') return state;
+  if (!state.selectedDefender) return state;
+
+  var defender = state.players.find(function(p) { return p.id === state.selectedDefender; });
+  if (!defender || defender.team !== 'home') return { ...state, selectedDefender: null };
+  if (defender.burstCooldownUntil > state.tick) return { ...state, selectedDefender: null };
+
+  var s = { ...state, players: state.players.map(function(p) { return { ...p }; }) };
+  var d = s.players.find(function(p) { return p.id === state.selectedDefender; });
+  d.burstTarget = { x: x, y: y };
+  s.selectedDefender = null;
+  return s;
+}
+
+// ==================== DRAG + THROUGH PUCK ====================
+
+function setRoute(state, playerId, route) {
+  if (state.phase !== 'play') return state;
+  var player = state.players.find(function(p) { return p.id === playerId; });
+  if (!player) return state;
+
+  var s = { ...state, players: state.players.map(function(p) { return { ...p }; }) };
+  var p = s.players.find(function(pl) { return pl.id === playerId; });
+  p.route = route.map(function(w) { return { x: w.x, y: w.y }; });
+  p.burstTarget = null;
+  // Update home position to route endpoint so player stays where you put them
+  // Skip goalie -- homeX is used for goal-side detection in driftPlayers
+  if (p.role !== 'G' && route.length > 0) {
+    var finalWp = route[route.length - 1];
+    p.homeX = finalWp.x;
+    p.homeY = finalWp.y;
+  }
+  return s;
+}
+
+function dragPlayer(state, playerId, x, y) {
+  if (state.phase !== 'play') return state;
+  var player = state.players.find(function(p) { return p.id === playerId; });
+  if (!player) return state;
+
+  var s = { ...state, players: state.players.map(function(p) { return { ...p }; }) };
+  var p = s.players.find(function(pl) { return pl.id === playerId; });
+  p.burstTarget = { x: x, y: y };
+  return s;
+}
+
+function throughBall(state, x, y) {
+  if (state.phase !== 'play') return state;
+  if (state.passBall) return state;
+
+  var carrier = state.players.find(function(p) { return p.id === state.ball.carrier; });
+  if (!carrier) return state;
+  if (carrier.settlingUntil > state.tick) return state;
+
+  var team = carrier.team;
+
+  // Start through puck -- puck goes to the tapped position
+  var s = { ...state, players: state.players.map(function(p) { return { ...p }; }) };
+  var c = s.players.find(function(p) { return p.id === carrier.id; });
+  c.hasBall = false;
+
+  s.ball = { ...s.ball, carrier: null };
+  s.passIdCounter = (s.passIdCounter || 0) + 1;
+  s.passBall = {
+    fromX: c.x, fromY: c.y,
+    toId: null,
+    targetPos: { x: x, y: y },
+    x: c.x, y: c.y,
+    trail: [], fromTeam: team,
+    passId: s.passIdCounter, checkedBy: new Set(),
+  };
+
+  // Nearest teammate (not the carrier, not goalie) runs toward the target spot
+  var nearestTeammate = null;
+  var nearestDist = Infinity;
+  for (var i = 0; i < s.players.length; i++) {
+    var p = s.players[i];
+    if (p.team !== team) continue;
+    if (p.id === carrier.id) continue;
+    if (p.role === 'G') continue;
+    var dist = getDist(p.x, p.y, x, y);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearestTeammate = p;
+    }
+  }
+  if (nearestTeammate) {
+    nearestTeammate.route = [];
+    nearestTeammate.burstTarget = { x: x, y: y };
+  }
+
+  return s;
+}
+
+// ==================== INPUT HANDLING ====================
+
+function tapPlayer(state, playerId) {
+  if (state.phase !== 'play') return state;
+  if (state.passBall) return state;
+
+  const target = state.players.find(p => p.id === playerId);
+  if (!target) return state;
+
+  const carrier = state.players.find(p => p.id === state.ball.carrier);
+  if (!carrier || carrier.team !== target.team) return state;
+  if (carrier.settlingUntil > state.tick) return state;
+  if (target.id === carrier.id) return state;
+
+  // Start pass
+  const s = { ...state, players: state.players.map(p => ({ ...p })) };
+  const c = s.players.find(p => p.id === carrier.id);
+  c.hasBall = false;
+
+  s.ball = { ...s.ball, carrier: null };
+  s.passIdCounter = (s.passIdCounter || 0) + 1;
+  s.passBall = {
+    fromX: c.x, fromY: c.y,
+    toId: target.id, targetPos: null,
+    x: c.x, y: c.y,
+    trail: [], fromTeam: carrier.team,
+    passId: s.passIdCounter, checkedBy: new Set(),
+  };
+
+  return s;
+}
+
+function tapField(state, x, y) {
+  if (state.phase !== 'play') return state;
+  if (state.passBall) return state;
+
+  const carrier = state.players.find(p => p.id === state.ball.carrier);
+  if (!carrier) return state;
+  if (carrier.settlingUntil > state.tick) return state;
+  if (carrier.burstCooldownUntil > state.tick) return state;
+  if (carrier.role === 'G') return state;
+
+  const s = { ...state, players: state.players.map(p => ({ ...p })) };
+  const c = s.players.find(p => p.id === carrier.id);
+  c.burstTarget = { x, y };
+
+  return s;
+}
+
+// ==================== REACT RENDERER ====================
+const { useState, useEffect, useRef, useCallback } = React;
+
+function App() {
+  const [gameState, setGameState] = useState(createInitialState);
+  const stateRef = useRef(gameState);
+  const pixelsPerUnitRef = useRef(1);
+  const fieldRef = useRef(null);
+  const containerRef = useRef(null);
+  const [fieldDims, setFieldDims] = useState({ width: 600, height: 400 });
+  var dragRef = useRef({ active: false, isDown: false, playerId: null, startX: 0, startY: 0, startGx: 0, startGy: 0, startTime: 0, lastGx: 0, lastGy: 0, waypoints: [] });
+  const [titleMode, setTitleMode] = useState('menu');
+  const [roomCode, setRoomCode] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+
+  stateRef.current = gameState;
+
+  // Calculate field dimensions
+  var calcDims = useCallback(function() {
+    var vw = window.visualViewport ? window.visualViewport.width : window.innerWidth;
+    var vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+
+    var w = vw;
+    var h = vh;
+
+    // Clamp ratio between 1.4:1 and 2.4:1
+    if (w / h < 1.4) h = w / 1.4;
+    if (w / h > 2.4) w = h * 2.4;
+
+    pixelsPerUnitRef.current = w / 100;
+    setFieldDims({ width: w, height: h });
+  }, []);
+
+  useEffect(() => {
+    calcDims();
+    window.addEventListener('resize', calcDims);
+    return () => window.removeEventListener('resize', calcDims);
+  }, [calcDims]);
+
+  // Toggle scroll: allow on title screen, lock during gameplay
+  useEffect(() => {
+    if (gameState.phase === 'title') {
+      document.documentElement.style.overflow = 'auto';
+      document.body.style.overflow = 'auto';
+    } else {
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.overflow = 'hidden';
+    }
+  }, [gameState.phase]);
+
+  // Game tick (Joiner is dormant -- receives state from Host via __STATE_SYNC__)
+  useEffect(() => {
+    if (gameState.phase === 'title') return;
+    if (netState.isMultiplayer && !netState.isHost) return;
+    const id = setInterval(() => {
+      setGameState(prev => {
+        var next = updateGame(prev, { type: 'TICK' });
+        if (netState.isMultiplayer && netState.isHost && netState.connected) {
+          netState.conn.send(JSON.stringify({ type: '__STATE_SYNC__', state: next }));
+        }
+        return next;
+      });
+    }, TICK_MS);
+    return () => clearInterval(id);
+  }, [gameState.phase]);
+
+  const dispatch = useCallback((action) => {
+    setGameState(prev => updateGame(prev, action));
+  }, []);
+
+  var dispatchAndSend = useCallback(function(action) {
+    if (netState.isMultiplayer && !netState.isHost) {
+      if (netState.connected) {
+        netState.conn.send(JSON.stringify(action));
+      }
+    } else {
+      dispatch(action);
+    }
+  }, [dispatch]);
+
+  var startSoloGame = useCallback(function() {
+    localTeam = 'home';
+    netState.isMultiplayer = false;
+    AudioSys.init();
+    AudioSys.whistle();
+    dispatch({ type: 'START_GAME' });
+  }, [dispatch]);
+
+  var startHostGame = useCallback(function() {
+    AudioSys.init();
+    setTitleMode('hosting');
+    hostGame(
+      function onCode(code) { setRoomCode(code); },
+      function onConnected() {
+        AudioSys.whistle();
+        dispatch({ type: 'START_GAME' });
+      },
+      function onData(msg) { if (msg.type !== '__STATE_SYNC__') dispatch(msg); },
+      function onDisconnect() { setTitleMode('disconnected'); }
+    );
+  }, [dispatch]);
+
+  var startJoinGame = useCallback(function() {
+    AudioSys.init();
+    setTitleMode('joining');
+    joinGame(
+      joinCode,
+      function onConnected() {
+        AudioSys.whistle();
+        dispatch({ type: 'START_GAME' });
+      },
+      function onData(msg) {
+        if (msg.type === '__STATE_SYNC__') {
+          setGameState(msg.state);
+        }
+      },
+      function onDisconnect() { setTitleMode('disconnected'); }
+    );
+  }, [dispatch, joinCode]);
+
+  var handleFieldPointerDown = useCallback(function(e) {
+    AudioSys.init();
+    var state = stateRef.current;
+    if (state.phase !== 'play') return;
+    if (state.ball.loose || state.passBall) return;
+
+    var rect = fieldRef.current.getBoundingClientRect();
+    var px = e.clientX - rect.left;
+    var py = e.clientY - rect.top;
+    var ppu = pixelsPerUnitRef.current;
+    var ypu = fieldDims.height / 100;
+    var gx = px / ppu;
+    var gy = py / ypu;
+
+    // Find if a local team player is under the finger
+    var tapRadius = 48;
+    var tappedPlayer = null;
+    var minDist = Infinity;
+    for (var i = 0; i < state.players.length; i++) {
+      var p = state.players[i];
+      if (p.team !== localTeam) continue;
+      var ppx = p.x * ppu;
+      var ppy = p.y * ypu;
+      var dist = Math.sqrt((px - ppx) * (px - ppx) + (py - ppy) * (py - ppy));
+      if (dist < tapRadius && dist < minDist) {
+        minDist = dist;
+        tappedPlayer = p;
+      }
+    }
+
+    dragRef.current = {
+      active: false,
+      isDown: true,
+      playerId: tappedPlayer ? tappedPlayer.id : null,
+      startX: px,
+      startY: py,
+      startGx: gx,
+      startGy: gy,
+      startTime: Date.now(),
+      lastGx: gx,
+      lastGy: gy,
+      waypoints: [],
+    };
+  }, [fieldDims]);
+
+  var handleFieldPointerMove = useCallback(function(e) {
+    var dr = dragRef.current;
+    if (!dr.isDown) return;
+    if (!dr.playerId) return;
+    if (stateRef.current.phase !== 'play') return;
+
+    var rect = fieldRef.current.getBoundingClientRect();
+    var px = e.clientX - rect.left;
+    var py = e.clientY - rect.top;
+    var ppu = pixelsPerUnitRef.current;
+    var ypu = fieldDims.height / 100;
+    var gx = Math.max(1, Math.min(99, px / ppu));
+    var gy = Math.max(1, Math.min(99, py / ypu));
+
+    var movedPx = Math.sqrt(
+      (px - dr.startX) * (px - dr.startX) + (py - dr.startY) * (py - dr.startY)
+    );
+
+    if (movedPx > 10) {
+      dr.active = true;
+    }
+
+    if (dr.active) {
+      var lastWp = dr.waypoints.length > 0 ? dr.waypoints[dr.waypoints.length - 1] : { x: dr.startGx, y: dr.startGy };
+      var wpDist = Math.sqrt((gx - lastWp.x) * (gx - lastWp.x) + (gy - lastWp.y) * (gy - lastWp.y));
+      if (wpDist >= 3) {
+        dr.waypoints.push({ x: gx, y: gy });
+        dispatchAndSend({ type: 'SET_ROUTE', playerId: dr.playerId, route: dr.waypoints.slice() });
+      }
+    }
+  }, [dispatchAndSend, fieldDims]);
+
+  var handleFieldPointerUp = useCallback(function(e) {
+    var dr = dragRef.current;
+    if (!dr.isDown) return;
+
+    var state = stateRef.current;
+    if (state.phase !== 'play') {
+      dragRef.current = { active: false, isDown: false, playerId: null, waypoints: [] };
+      return;
+    }
+
+    // If it was a drag, finalize the route
+    if (dr.active) {
+      var rect2 = fieldRef.current.getBoundingClientRect();
+      var fpx = e.clientX - rect2.left;
+      var fpy = e.clientY - rect2.top;
+      var fppu = pixelsPerUnitRef.current;
+      var fypu = fieldDims.height / 100;
+      var fgx = Math.max(1, Math.min(99, fpx / fppu));
+      var fgy = Math.max(1, Math.min(99, fpy / fypu));
+      var lastWp2 = dr.waypoints.length > 0 ? dr.waypoints[dr.waypoints.length - 1] : { x: dr.startGx, y: dr.startGy };
+      var finalDist = Math.sqrt((fgx - lastWp2.x) * (fgx - lastWp2.x) + (fgy - lastWp2.y) * (fgy - lastWp2.y));
+      if (finalDist >= 3) {
+        dr.waypoints.push({ x: fgx, y: fgy });
+      }
+      dispatchAndSend({ type: 'SET_ROUTE', playerId: dr.playerId, route: dr.waypoints.slice() });
+      dragRef.current = { active: false, isDown: false, playerId: null, waypoints: [] };
+      return;
+    }
+
+    // It was a tap
+    var rect = fieldRef.current.getBoundingClientRect();
+    var px = e.clientX - rect.left;
+    var py = e.clientY - rect.top;
+    var ppu = pixelsPerUnitRef.current;
+    var ypu = fieldDims.height / 100;
+    var gx = px / ppu;
+    var gy = py / ypu;
+
+    if (state.possession === localTeam) {
+      // OFFENSE TAP LOGIC
+      var carrier = state.players.find(function(p) { return p.id === state.ball.carrier; });
+      if (!carrier || carrier.team !== localTeam) {
+        dragRef.current = { active: false, isDown: false, playerId: null, waypoints: [] };
+        return;
+      }
+
+      // 1. Check if tapping the goal area to shoot
+      var hGoalX = getAttackGoalX(localTeam, state.clock.period);
+      var inRange = Math.abs(hGoalX - carrier.x) <= SHOOT_RANGE_X;
+      var isGoalTap = (hGoalX === 100 ? gx >= 85 : gx <= 15) && gy >= 35 && gy <= 65;
+      if (inRange && isGoalTap) {
+        AudioSys.slapshot();
+        dispatchAndSend({ type: 'SHOOT', aimX: gx, aimY: gy });
+        dragRef.current = { active: false, isDown: false, playerId: null, waypoints: [] };
+        return;
+      }
+
+      // 2. Check if tapping a teammate to pass
+      var tapRadius = 48;
+      var tappedTeammate = null;
+      var minDist = Infinity;
+      for (var i = 0; i < state.players.length; i++) {
+        var p = state.players[i];
+        if (p.team !== localTeam) continue;
+        if (p.id === carrier.id) continue;
+        var ppx = p.x * ppu;
+        var ppy = p.y * ypu;
+        var dist = Math.sqrt((px - ppx) * (px - ppx) + (py - ppy) * (py - ppy));
+        if (dist < tapRadius && dist < minDist) {
+          minDist = dist;
+          tappedTeammate = p;
+        }
+      }
+
+      if (tappedTeammate) {
+        AudioSys.tic();
+        dispatchAndSend({ type: 'TAP_PLAYER', playerId: tappedTeammate.id });
+        dragRef.current = { active: false, isDown: false, playerId: null, waypoints: [] };
+        return;
+      }
+
+      // 3. Tap on empty ice = through puck
+      AudioSys.tic();
+      dispatchAndSend({ type: 'THROUGH_BALL', x: gx, y: gy });
+
+    } else if (state.possession !== localTeam) {
+      // DEFENSE TAP LOGIC — tap carrier to send nearest skater to check
+      var oppCarrier = state.players.find(function(p) { return p.id === state.ball.carrier; });
+      if (oppCarrier) {
+        var acx = oppCarrier.x * ppu;
+        var acy = oppCarrier.y * ypu;
+        var carrierDist = Math.sqrt((px - acx) * (px - acx) + (py - acy) * (py - acy));
+        if (carrierDist < 48) {
+          var nearestDefender = null;
+          var nearestDefDist = Infinity;
+          for (var j = 0; j < state.players.length; j++) {
+            var d = state.players[j];
+            if (d.team !== localTeam) continue;
+            if (d.role === 'G') continue; // Goalie doesn't check
+            var ddist = getDist(d.x, d.y, oppCarrier.x, oppCarrier.y);
+            if (ddist < nearestDefDist) {
+              nearestDefDist = ddist;
+              nearestDefender = d;
+            }
+          }
+          if (nearestDefender) {
+            AudioSys.tic();
+            dispatchAndSend({ type: 'TAP_DEFENDER', playerId: nearestDefender.id });
+          }
+        }
+      }
+    }
+
+    dragRef.current = { active: false, isDown: false, playerId: null, waypoints: [] };
+  }, [dispatchAndSend, fieldDims]);
+
+  // TITLE SCREEN + LANDING PAGE
+  if (gameState.phase === 'title') {
+    return React.createElement('div', { className: 'landing-wrapper' },
+      React.createElement('div', { className: 'title-screen' },
+        React.createElement('h1', null, 'Dark Ice'),
+        React.createElement('div', { className: 'subtitle' },
+          '3v3 hockey. Draw routes. Make plays.'
+        ),
+        React.createElement('div', { className: 'version' }, 'Alpha 1.0.0 -- test build'),
+        titleMode === 'menu' ? React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' } },
+          React.createElement('button', { onClick: startSoloGame }, 'PLAY SOLO'),
+          React.createElement('button', {
+            onClick: startHostGame,
+            style: { background: '#2563eb' }
+          }, 'HOST GAME'),
+          React.createElement('button', {
+            onClick: function() { setTitleMode('join_input'); },
+            style: { background: '#7c3aed' }
+          }, 'JOIN GAME')
+        ) : null,
+        titleMode === 'hosting' ? React.createElement('div', { style: { textAlign: 'center' } },
+          React.createElement('div', { style: { fontSize: '1.1em', color: '#ccc', marginBottom: '16px' } }, 'Waiting for Player 2...'),
+          React.createElement('div', { style: { fontSize: '3em', fontWeight: 'bold', color: '#ffd700', letterSpacing: '8px', fontFamily: 'monospace' } }, roomCode),
+          React.createElement('div', { style: { fontSize: '0.9em', color: '#888', marginTop: '12px' } }, 'Share this code with your opponent'),
+          React.createElement('div', { className: 'wifi-note' }, 'Both devices must be on the same WiFi. VPNs must be off.')
+        ) : null,
+        titleMode === 'join_input' ? React.createElement('div', { style: { textAlign: 'center' } },
+          React.createElement('div', { style: { fontSize: '1.1em', color: '#ccc', marginBottom: '12px' } }, 'Enter room code:'),
+          React.createElement('input', {
+            type: 'text', inputMode: 'numeric', maxLength: 4,
+            value: joinCode,
+            onChange: function(e) { setJoinCode(e.target.value.replace(/\D/g, '').slice(0, 4)); },
+            style: { fontSize: '2em', width: '140px', textAlign: 'center', letterSpacing: '8px',
+              fontFamily: 'monospace', padding: '8px', borderRadius: '8px', border: '2px solid #7c3aed',
+              background: '#0d1117', color: 'white' }
+          }),
+          React.createElement('div', { style: { marginTop: '12px' } },
+            React.createElement('button', {
+              onClick: startJoinGame,
+              disabled: joinCode.length !== 4,
+              style: { background: joinCode.length === 4 ? '#7c3aed' : '#555', cursor: joinCode.length === 4 ? 'pointer' : 'default' }
+            }, 'CONNECT')
+          ),
+          React.createElement('div', { className: 'wifi-note' }, 'Both devices must be on the same WiFi. VPNs must be off.')
+        ) : null,
+        titleMode === 'joining' ? React.createElement('div', { style: { textAlign: 'center', color: '#ccc' } },
+          'Connecting to room ' + joinCode + '...'
+        ) : null,
+        titleMode === 'disconnected' ? React.createElement('div', { style: { textAlign: 'center' } },
+          React.createElement('div', { style: { color: '#ff6b6b', fontSize: '1.1em', marginBottom: '12px' } }, 'Connection lost'),
+          React.createElement('button', {
+            onClick: function() { cleanupNet(); setTitleMode('menu'); dispatch({ type: 'PLAY_AGAIN' }); }
+          }, 'BACK TO MENU')
+        ) : null
+      ),
+      React.createElement('div', { className: 'landing-content' },
+        // Feedback section
+        React.createElement('div', { className: 'landing-card feedback-card' },
+          React.createElement('p', null, 'Played it? Broke it? Have thoughts? Let me know.'),
+          React.createElement('a', {
+            href: 'mailto:remote-tank-halves@duck.com?subject=Dark%20Ice%20Feedback',
+            className: 'feedback-btn'
+          }, 'Give Feedback')
+        ),
+        // About the Project
+        React.createElement('h2', { className: 'landing-heading' }, 'About the Project'),
+        React.createElement('p', { className: 'landing-text' },
+          'This is a game design project, primarily for ',
+          React.createElement('strong', null, 'teaching and learning'),
+          ' about hockey. Dark Ice is a very rough first-draft prototype. Everything is Alpha versioned -- not expected to completely work. This is the design idea:'
+        ),
+        // Game Mode
+        React.createElement('div', { className: 'landing-card mode-card' },
+          React.createElement('h3', null, 'Live Play'),
+          React.createElement('p', null,
+            React.createElement('strong', { className: 'highlight' }, 'Draw routes for your skaters in real time'),
+            ' -- they follow the path you trace. Tap to pass, tap the goal to shoot, tap empty ice for a through puck. Single and two-player (on separate devices).'
+          )
+        ),
+        // Tactical Mode
+        React.createElement('div', { className: 'landing-card mode-card' },
+          React.createElement('h3', null, 'Tactical Mode (Coaching)'),
+          React.createElement('p', null, 'Pause the action. Draw routes for multiple skaters. Hit go and watch them execute. Use it as a digital whiteboard for coaching, or as a turn-based way to play -- plan your moves, then see if they work.')
+        ),
+        // Landscape note
+        React.createElement('p', { className: 'landscape-note' }, 'Best played in landscape mode'),
+        // Other alphas
+        React.createElement('div', { className: 'landing-card' },
+          React.createElement('p', { className: 'landing-caption' }, 'Other testing alphas in the same project:'),
+          React.createElement('div', { className: 'alpha-links' },
+            React.createElement('a', { href: 'https://kpurdddy.github.io/soccermommas/', target: '_blank', rel: 'noopener noreferrer' }, 'Soccer Mamas'),
+            React.createElement('a', { href: 'https://kpurdddy.github.io/Hailmarys/', target: '_blank', rel: 'noopener noreferrer' }, 'Hail Marys (tactical football)'),
+            React.createElement('a', { href: 'https://kpurdddy.github.io/darkice/', target: '_blank', rel: 'noopener noreferrer' }, 'Dark Ice (this game)')
+          )
+        ),
+        // Experimental note
+        React.createElement('hr', { className: 'landing-divider' }),
+        React.createElement('p', { className: 'experimental-note' },
+          'This is an experimental project. A bar game about hockey.'
+        )
+      )
+    );
+  }
+
+  // GAME SCREEN
+  const ppu = pixelsPerUnitRef.current;
+  const fw = fieldDims.width;
+  const fh = fieldDims.height;
+  const ypu = fh / 100;
+
+  // Clock display — counting down within current period (20:00 to 0:00)
+  const gameSeconds = gameState.clock.elapsed * TICK_MS / 1000 * GAME_TIME_SCALE;
+  const periodStart = (gameState.clock.period - 1) * 1200;
+  const periodElapsed = gameSeconds - periodStart;
+  const remaining = Math.max(0, 1200 - periodElapsed);
+  const displayMin = Math.floor(remaining / 60);
+  const displaySec = Math.floor(remaining % 60);
+  const clockStr = displayMin + ':' + (displaySec < 10 ? '0' : '') + displaySec;
+  const periodStr = 'P' + gameState.clock.period;
+
+  // Shooting range check for visual indicator
+  const localGoalX = getAttackGoalX(localTeam, gameState.clock.period);
+  const localCarrier = gameState.possession === localTeam && gameState.ball.carrier
+    ? gameState.players.find(p => p.id === gameState.ball.carrier) : null;
+  const showShootIndicator = localCarrier && Math.abs(localGoalX - localCarrier.x) <= SHOOT_RANGE_X;
+
+  return React.createElement('div', { className: 'game-container', ref: containerRef },
+    // RINK (wrapped in div for overlay positioning)
+    React.createElement('div', { style: { position: 'relative', width: fw, height: fh } },
+      // HUD overlay - version text
+      React.createElement('div', { className: 'hud-version' }, 'Alpha 1.0.0 -- test build'),
+      // HUD overlay - score/period/clock
+      React.createElement('div', { className: 'hud-overlay' },
+        React.createElement('div', { className: 'hud-pill' },
+          React.createElement('span', { className: 'period' },
+            (gameState.possession === 'home' ? '\u{1F7E6} ' : '\u{1F7E5} ') + periodStr),
+          React.createElement('span', { className: 'score' },
+            gameState.score.home + ' \u2014 ' + gameState.score.away
+          ),
+          React.createElement('span', { className: 'clock' }, clockStr)
+        )
+      ),
+      React.createElement('svg', {
+        ref: fieldRef,
+        width: fw, height: fh,
+        style: { display: 'block', touchAction: 'none', cursor: 'pointer', borderRadius: '10px', overflow: 'hidden' },
+        onPointerDown: handleFieldPointerDown,
+        onPointerMove: handleFieldPointerMove,
+        onPointerUp: handleFieldPointerUp,
+        onPointerLeave: handleFieldPointerUp,
+      },
+        // Dark rink surface
+        React.createElement('rect', { x: 0, y: 0, width: fw, height: fh, fill: '#1a1a2e', rx: 10 }),
+
+        // Rink markings
+        ...renderRinkLines(fw, fh, ppu, ypu),
+
+        // Shooting range highlight
+        showShootIndicator ? React.createElement('rect', {
+          key: 'shoot-zone',
+          x: localGoalX === 100 ? fw - 15 * ppu : 0, y: (50 - 15) * ypu,
+          width: 15 * ppu, height: 30 * ypu,
+          fill: '#ffd700', opacity: 0.15 + 0.08 * Math.sin(gameState.tick * 0.15),
+          rx: 4,
+        }) : null,
+
+        // Pass trail
+        ...(gameState.passBall ? gameState.passBall.trail.map((t, i) =>
+          React.createElement('circle', {
+            key: 'trail_' + i,
+            cx: t.x * ppu, cy: t.y * ypu, r: 3,
+            fill: '#88ccff', opacity: t.opacity * 0.5
+          })
+        ) : []),
+
+        // Puck (renders ABOVE markings, BELOW players)
+        React.createElement('circle', {
+          key: 'puck',
+          cx: gameState.ball.x * ppu, cy: gameState.ball.y * ypu,
+          r: Math.max(4, ppu * 0.6),
+          fill: '#111', stroke: 'rgba(255,255,255,0.8)', strokeWidth: 2,
+        }),
+
+        // Loose puck indicator
+        gameState.ball.loose ? React.createElement('circle', {
+          key: 'loose-ring',
+          cx: gameState.ball.x * ppu, cy: gameState.ball.y * ypu,
+          r: Math.max(10, ppu * 1.2),
+          fill: 'none', stroke: 'white', strokeWidth: 2,
+          opacity: 0.5 + 0.3 * Math.sin(gameState.tick * 0.3),
+          strokeDasharray: '4 3',
+        }) : null,
+
+        // Route lines for players with active routes
+        ...gameState.players.filter(function(p) { return p.team === localTeam && p.route && p.route.length > 0; }).map(function(p) {
+          var points = (p.x * ppu) + ',' + (p.y * ypu);
+          for (var i = 0; i < p.route.length; i++) {
+            points += ' ' + (p.route[i].x * ppu) + ',' + (p.route[i].y * ypu);
+          }
+          return React.createElement('polyline', {
+            key: 'route-' + p.id,
+            points: points,
+            fill: 'none',
+            stroke: p.id === gameState.ball.carrier ? '#ffd700' : '#60a5fa',
+            strokeWidth: 2,
+            strokeDasharray: '6 4',
+            opacity: 0.7,
+          });
+        }),
+
+        // Route waypoint dots
+        ...gameState.players.filter(function(p) { return p.team === localTeam && p.route && p.route.length > 0; }).reduce(function(acc, p) {
+          p.route.forEach(function(wp, i) {
+            acc.push(React.createElement('circle', {
+              key: 'wp-' + p.id + '-' + i,
+              cx: wp.x * ppu, cy: wp.y * ypu,
+              r: 3,
+              fill: p.id === gameState.ball.carrier ? '#ffd700' : '#60a5fa',
+              opacity: 0.5,
+            }));
+          });
+          return acc;
+        }, []),
+
+        // Player tokens (render ABOVE puck)
+        ...gameState.players.map(p => renderPlayer(p, ppu, ypu, gameState)),
+
+        // Gold carrier ring
+        gameState.ball.carrier && (() => {
+          const c = gameState.players.find(p => p.id === gameState.ball.carrier);
+          if (!c) return null;
+          const settling = c.settlingUntil > gameState.tick;
+          return React.createElement('circle', {
+            key: 'carrier-ring',
+            cx: c.x * ppu, cy: c.y * ypu,
+            r: Math.max(18, ppu * 2.2),
+            fill: 'none', stroke: '#ffd700',
+            strokeWidth: settling ? 2 : 3,
+            opacity: settling ? 0.5 + 0.3 * Math.sin(gameState.tick * 0.5) : 0.8 + 0.2 * Math.sin(gameState.tick * 0.21),
+          });
+        })(),
+
+        // Selected defender ring
+        gameState.selectedDefender ? (function() {
+          var sd = gameState.players.find(function(p) { return p.id === gameState.selectedDefender; });
+          if (!sd) return null;
+          return React.createElement('circle', {
+            key: 'selected-defender-ring',
+            cx: sd.x * ppu, cy: sd.y * ypu,
+            r: Math.max(20, ppu * 2.5),
+            fill: 'none', stroke: '#00ff88',
+            strokeWidth: 3,
+            opacity: 0.7 + 0.3 * Math.sin(gameState.tick * 0.3),
+            strokeDasharray: '6 3',
+          });
+        })() : null,
+      ),
+
+      // GOAL! overlay
+      gameState.phase === 'goal_celebration' ? React.createElement('div', {
+        key: 'goal-overlay',
+        style: {
+          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: 'none', zIndex: 100,
+        }
+      }, React.createElement('div', {
+        style: {
+          fontSize: Math.max(48, fw * 0.1) + 'px', fontWeight: 'bold',
+          color: '#ffd700', textShadow: '0 0 20px rgba(255,215,0,0.8), 0 4px 8px rgba(0,0,0,0.5)',
+          letterSpacing: '8px', fontFamily: 'Arial, sans-serif',
+        }
+      }, 'GOAL!')) : null,
+
+      // SAVE overlay
+      gameState.phase === 'save_display' ? React.createElement('div', {
+        key: 'save-overlay',
+        style: {
+          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: 'none', zIndex: 100,
+        }
+      }, React.createElement('div', {
+        style: {
+          fontSize: Math.max(36, fw * 0.08) + 'px', fontWeight: 'bold',
+          color: 'white', textShadow: '0 0 15px rgba(255,255,255,0.6), 0 4px 8px rgba(0,0,0,0.5)',
+          letterSpacing: '6px', fontFamily: 'Arial, sans-serif',
+        }
+      }, 'SAVE!')) : null,
+
+      // Faceoff pause overlay
+      gameState.phase === 'faceoff_pause' ? React.createElement('div', {
+        key: 'faceoff-overlay',
+        style: {
+          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: 'none', zIndex: 100,
+        }
+      }, React.createElement('div', {
+        style: {
+          fontSize: Math.max(24, fw * 0.04) + 'px', fontWeight: 'bold',
+          color: 'white', textShadow: '0 2px 6px rgba(0,0,0,0.6)',
+          fontFamily: 'Arial, sans-serif',
+        }
+      }, 'FACE OFF')) : null,
+
+      // Period break overlay
+      gameState.phase === 'period_break' ? React.createElement('div', {
+        key: 'period-break-overlay',
+        style: {
+          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.5)', cursor: 'pointer', zIndex: 100,
+        },
+        onPointerDown: () => dispatch({ type: 'START_NEXT_PERIOD' }),
+      },
+        React.createElement('div', {
+          style: { fontSize: Math.max(36, fw * 0.07) + 'px', fontWeight: 'bold', color: 'white',
+            textShadow: '0 2px 8px rgba(0,0,0,0.7)', letterSpacing: '4px', marginBottom: '16px' }
+        }, 'END OF PERIOD ' + gameState.clock.period),
+        React.createElement('div', {
+          style: { fontSize: Math.max(24, fw * 0.05) + 'px', fontWeight: 'bold', color: 'white',
+            textShadow: '0 2px 4px rgba(0,0,0,0.6)', marginBottom: '16px' }
+        }, gameState.score.home + ' \u2014 ' + gameState.score.away),
+        React.createElement('div', {
+          style: { fontSize: Math.max(14, fw * 0.025) + 'px', color: '#ccc' }
+        }, 'Tap to continue'),
+      ) : null,
+
+      // Full time overlay
+      gameState.phase === 'fulltime' ? React.createElement('div', {
+        key: 'fulltime-overlay',
+        style: {
+          position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.6)', zIndex: 100,
+        },
+      },
+        React.createElement('div', {
+          style: { fontSize: Math.max(36, fw * 0.07) + 'px', fontWeight: 'bold', color: 'white',
+            textShadow: '0 2px 8px rgba(0,0,0,0.7)', letterSpacing: '4px', marginBottom: '16px' }
+        }, 'FULL TIME'),
+        React.createElement('div', {
+          style: { fontSize: Math.max(24, fw * 0.05) + 'px', fontWeight: 'bold', color: 'white',
+            textShadow: '0 2px 4px rgba(0,0,0,0.6)', marginBottom: '8px' }
+        }, gameState.score.home + ' \u2014 ' + gameState.score.away),
+        React.createElement('div', {
+          style: { fontSize: Math.max(18, fw * 0.035) + 'px', color: '#ffd700', marginBottom: '24px' }
+        }, gameState.score.home > gameState.score.away ? (localTeam === 'home' ? 'You Win!' : 'You Lose!') :
+           gameState.score.away > gameState.score.home ? (localTeam === 'away' ? 'You Win!' : 'You Lose!') : 'Draw!'),
+        React.createElement('button', {
+          style: { fontSize: '1.2em', padding: '12px 36px', background: '#27ae60', color: 'white',
+            border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
+          onClick: () => dispatch({ type: 'PLAY_AGAIN' }),
+        }, 'PLAY AGAIN'),
+      ) : null,
+    ),
+
+  );
+}
+
+function renderPlayer(p, ppu, ypu, gs) {
+  const r = Math.max(14, ppu * 1.7);
+  const isHome = p.team === 'home';
+  const fill = isHome ? '#2563eb' : '#dc2626';
+  const stroke = isHome ? '#1d4ed8' : '#b91c1c';
+  const cx = p.x * ppu;
+  const cy = p.y * ypu;
+  const fontSize = Math.max(8, r * 0.65);
+
+  // Hockey stick — line from edge of circle toward puck
+  const angle = Math.atan2(gs.ball.y * ypu - cy, gs.ball.x * ppu - cx);
+  const stickStartX = cx + Math.cos(angle) * r;
+  const stickStartY = cy + Math.sin(angle) * r;
+  const stickLen = p.role === 'G' ? 7 : 10;
+  const stickEndX = stickStartX + Math.cos(angle) * stickLen;
+  const stickEndY = stickStartY + Math.sin(angle) * stickLen;
+
+  return React.createElement('g', { key: p.id },
+    React.createElement('circle', {
+      cx, cy, r, fill, stroke, strokeWidth: 2, opacity: 0.92
+    }),
+    // Stick line (above circle, below text)
+    React.createElement('line', {
+      x1: stickStartX, y1: stickStartY,
+      x2: stickEndX, y2: stickEndY,
+      stroke: '#ccc', strokeWidth: 2, strokeLinecap: 'round',
+    }),
+    React.createElement('text', {
+      x: cx, y: cy + fontSize * 0.35,
+      textAnchor: 'middle', fill: 'white',
+      fontSize, fontWeight: 'bold', fontFamily: 'Arial, sans-serif',
+      style: { pointerEvents: 'none', userSelect: 'none' },
+    }, p.role)
+  );
+}
+
+function renderRinkLines(fw, fh, ppu, ypu) {
+  const lines = [];
+
+  // Boards — rounded rectangle border
+  lines.push(React.createElement('rect', {
+    key: 'boards', x: 1, y: 1, width: fw - 2, height: fh - 2,
+    fill: 'none', stroke: 'rgba(255,255,255,0.7)', strokeWidth: 3, rx: 10, ry: 10,
+  }));
+
+  // Center line (red)
+  lines.push(React.createElement('line', {
+    key: 'center-line', x1: 50 * ppu, y1: 0, x2: 50 * ppu, y2: fh,
+    stroke: 'rgba(255,0,0,0.6)', strokeWidth: 2,
+  }));
+
+  // Center circle (red, no fill)
+  lines.push(React.createElement('circle', {
+    key: 'center-circle', cx: 50 * ppu, cy: 50 * ypu, r: 10 * ppu,
+    fill: 'none', stroke: 'rgba(255,0,0,0.4)', strokeWidth: 2,
+  }));
+
+  // Center dot (red, filled)
+  lines.push(React.createElement('circle', {
+    key: 'center-dot', cx: 50 * ppu, cy: 50 * ypu, r: Math.max(3, ppu * 0.5),
+    fill: 'rgba(255,0,0,0.6)',
+  }));
+
+  // Blue lines
+  lines.push(React.createElement('line', {
+    key: 'blue-left', x1: 25 * ppu, y1: 0, x2: 25 * ppu, y2: fh,
+    stroke: 'rgba(0,100,255,0.5)', strokeWidth: 2,
+  }));
+  lines.push(React.createElement('line', {
+    key: 'blue-right', x1: 75 * ppu, y1: 0, x2: 75 * ppu, y2: fh,
+    stroke: 'rgba(0,100,255,0.5)', strokeWidth: 2,
+  }));
+
+  // Goal creases (semicircles in front of each goal)
+  // Left goal crease — semicircle at x=0 centered on y=50, radius 5 units, bulging right
+  var creaseR = 5;
+  lines.push(React.createElement('path', {
+    key: 'crease-left',
+    d: 'M 0 ' + ((50 - creaseR) * ypu) + ' A ' + (creaseR * ppu) + ' ' + (creaseR * ypu) + ' 0 0 1 0 ' + ((50 + creaseR) * ypu),
+    fill: 'rgba(100,200,255,0.2)', stroke: 'rgba(100,200,255,0.4)', strokeWidth: 1,
+  }));
+  // Right goal crease — semicircle at x=100, bulging left
+  lines.push(React.createElement('path', {
+    key: 'crease-right',
+    d: 'M ' + fw + ' ' + ((50 - creaseR) * ypu) + ' A ' + (creaseR * ppu) + ' ' + (creaseR * ypu) + ' 0 0 0 ' + fw + ' ' + ((50 + creaseR) * ypu),
+    fill: 'rgba(100,200,255,0.2)', stroke: 'rgba(100,200,255,0.4)', strokeWidth: 1,
+  }));
+
+  // Faceoff dots
+  var faceoffDots = [
+    { x: 15, y: 25 }, { x: 15, y: 75 },
+    { x: 85, y: 25 }, { x: 85, y: 75 },
+    { x: 25, y: 50 }, { x: 75, y: 50 },
+  ];
+  faceoffDots.forEach(function(dot, i) {
+    lines.push(React.createElement('circle', {
+      key: 'faceoff-dot-' + i,
+      cx: dot.x * ppu, cy: dot.y * ypu, r: Math.max(3, ppu * 0.4),
+      fill: 'rgba(255,0,0,0.4)',
+    }));
+  });
+
+  // Goal mouth indicators (red lines at each end, y=35 to y=65)
+  lines.push(React.createElement('line', {
+    key: 'goal-left', x1: 1, y1: 35 * ypu, x2: 1, y2: 65 * ypu,
+    stroke: 'rgba(255,50,50,0.8)', strokeWidth: 4,
+  }));
+  lines.push(React.createElement('line', {
+    key: 'goal-right', x1: fw - 1, y1: 35 * ypu, x2: fw - 1, y2: 65 * ypu,
+    stroke: 'rgba(255,50,50,0.8)', strokeWidth: 4,
+  }));
+
+  return lines;
+}
+
+// ==================== MOUNT ====================
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+</script>
+</body>
+</html>
