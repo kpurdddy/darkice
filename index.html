@@ -277,10 +277,10 @@ function getInterceptionChance(d) {
 }
 
 function getTackleChance(d) {
-  if (d > 3) return 0;
-  if (d <= 0.5) return 0.80;
-  if (d <= 1) return 0.50;
-  if (d <= 2) return 0.25;
+  if (d > 4) return 0;
+  if (d <= 1) return 0.85;
+  if (d <= 2) return 0.55;
+  if (d <= 3) return 0.25;
   return 0.10;
 }
 
@@ -823,7 +823,7 @@ function updateLooseBall(s) {
   for (const p of s.players) {
     if (p.cooldownUntil > s.tick) continue;
     const d = getDist(p.x, p.y, s.ball.x, s.ball.y);
-    if (d < nearestDist) {
+    if (d < nearestDist && d < 4) {
       nearestDist = d;
       nearestPlayer = p;
     }
@@ -1014,11 +1014,11 @@ function executeShot(state, carrierId, aimX, aimY) {
   var scatterRange = Math.max(0, (distToGoal - 5) * 0.15);
   var targetY = clampedAimY + (gameRNG() - 0.5) * scatterRange;
 
-  // Distance factor: 50% at 5 units, 5% at 25 units
+  // Distance factor: 75% at 5 units, 10% at 30 units
   var distFactor;
-  if (distToGoal <= 5) distFactor = 0.50;
-  else if (distToGoal >= 25) distFactor = 0.05;
-  else distFactor = 0.50 - 0.45 * (distToGoal - 5) / 20;
+  if (distToGoal <= 5) distFactor = 0.75;
+  else if (distToGoal >= 30) distFactor = 0.10;
+  else distFactor = 0.75 - 0.65 * (distToGoal - 5) / 25;
 
   // Aim factor: shots aimed at corners are harder to save but more likely to go wide
   var aimOffCenter = Math.abs(clampedAimY - 50) / 12;
@@ -1039,15 +1039,15 @@ function executeShot(state, carrierId, aimX, aimY) {
   for (var i = 0; i < s.players.length; i++) {
     var p = s.players[i];
     if (p.team === shootingTeam || p.role === 'G') continue;
-    if (getDist(p.x, p.y, carrier.x, carrier.y) < 3) { defFactor = 0.7; break; }
+    if (getDist(p.x, p.y, carrier.x, carrier.y) < 2) { defFactor = 0.75; break; }
   }
 
   // Angle factor: 1.0 at center (y=50), 0.5 at edges
   var angleFactor = 1.0 - 0.5 * (Math.abs(carrier.y - 50) / 50);
 
   var baseChance = distFactor * angleFactor * defFactor;
-  var saveChance = (1 - baseChance) * (1 - cornerSaveBonus) * keeperFactor;
-  var wideChance = (1 - baseChance) * cornerWideBonus + (1 - baseChance) / 14;
+  var saveChance = (1 - baseChance) * (1 - cornerSaveBonus) * keeperFactor * 0.55;
+  var wideChance = (1 - baseChance) * cornerWideBonus + (1 - baseChance) / 8;
 
   var goalChance = baseChance;
   var roll = gameRNG();
@@ -1062,13 +1062,7 @@ function executeShot(state, carrierId, aimX, aimY) {
     targetY = clampedAimY > 50 ? 65 + gameRNG() * 10 : 35 - gameRNG() * 10;
   }
 
-  if (result === 'save') {
-    var saveKeeperId = shootingTeam === 'home' ? 'away_0' : 'home_0';
-    var saveKeeper = s.players.find(function(p) { return p.id === saveKeeperId; });
-    if (saveKeeper) {
-      targetX = saveKeeper.x;
-    }
-  }
+  // Save: puck goes where player aimed. Keeper slides to intercept during animation.
 
   carrier.hasBall = false;
   carrier.route = [];
@@ -1099,7 +1093,8 @@ function updateShotAnimation(state) {
   const keeperId = s.shot.shootingTeam === 'home' ? 'away_0' : 'home_0';
   const keeper = s.players.find(p => p.id === keeperId);
   if (keeper) {
-    keeper.y += (s.shot.targetY - keeper.y) * 0.15;
+    keeper.y += (s.shot.targetY - keeper.y) * 0.25;
+    keeper.x += (s.shot.targetX - keeper.x) * 0.12;
   }
 
   if (s.shot.ticksElapsed >= s.shot.ticksTotal) {
@@ -1117,8 +1112,8 @@ function updateShotAnimation(state) {
       s.ball.loose = true;
       s.ball.looseTimer = s.tick + LOOSE_BALL_TICKS;
       s.ball.lastCarrierId = null;
-      s.ball.vx = 0;
-      s.ball.vy = 0;
+      s.ball.vx = (gameRNG() - 0.5) * 0.8;
+      s.ball.vy = (gameRNG() - 0.5) * 0.8;
       s.phase = 'save_display';
       s.saveDisplayTimer = s.tick + 30;
       s.shot = null;
@@ -1654,18 +1649,7 @@ function App() {
         return;
       }
 
-      // 1. Check if tapping the goal area to shoot
-      var hGoalX = getAttackGoalX(localTeam, state.clock.period);
-      var inRange = Math.abs(hGoalX - carrier.x) <= SHOOT_RANGE_X;
-      var isGoalTap = (hGoalX === 100 ? gx >= 85 : gx <= 15) && gy >= 35 && gy <= 65;
-      if (inRange && isGoalTap) {
-        AudioSys.slapshot();
-        dispatchAndSend({ type: 'SHOOT', aimX: gx, aimY: gy });
-        dragRef.current = { active: false, isDown: false, playerId: null, waypoints: [] };
-        return;
-      }
-
-      // 2. Check if tapping a teammate to pass
+      // 1. Check if tapping a teammate to pass (priority over shot)
       var tapRadius = 48;
       var tappedTeammate = null;
       var minDist = Infinity;
@@ -1685,6 +1669,17 @@ function App() {
       if (tappedTeammate) {
         AudioSys.tic();
         dispatchAndSend({ type: 'TAP_PLAYER', playerId: tappedTeammate.id });
+        dragRef.current = { active: false, isDown: false, playerId: null, waypoints: [] };
+        return;
+      }
+
+      // 2. Check if tapping the goal area to shoot
+      var hGoalX = getAttackGoalX(localTeam, state.clock.period);
+      var inRange = Math.abs(hGoalX - carrier.x) <= SHOOT_RANGE_X;
+      var isGoalTap = (hGoalX === 100 ? gx >= 85 : gx <= 15) && gy >= 35 && gy <= 65;
+      if (inRange && isGoalTap) {
+        AudioSys.slapshot();
+        dispatchAndSend({ type: 'SHOOT', aimX: gx, aimY: gy });
         dragRef.current = { active: false, isDown: false, playerId: null, waypoints: [] };
         return;
       }
@@ -1732,7 +1727,7 @@ function App() {
         React.createElement('div', { className: 'subtitle' },
           '3v3 hockey. Draw routes. Make plays.'
         ),
-        React.createElement('div', { className: 'version' }, 'Alpha 1.0.0 -- test build'),
+        React.createElement('div', { className: 'version' }, 'Alpha 1.1.0 -- test build'),
         titleMode === 'menu' ? React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' } },
           React.createElement('button', { onClick: startSoloGame }, 'PLAY SOLO'),
           React.createElement('button', {
@@ -1854,7 +1849,7 @@ function App() {
     // RINK (wrapped in div for overlay positioning)
     React.createElement('div', { style: { position: 'relative', width: fw, height: fh } },
       // HUD overlay - version text
-      React.createElement('div', { className: 'hud-version' }, 'Alpha 1.0.0 -- test build'),
+      React.createElement('div', { className: 'hud-version' }, 'Alpha 1.1.0 -- test build'),
       // HUD overlay - score/period/clock
       React.createElement('div', { className: 'hud-overlay' },
         React.createElement('div', { className: 'hud-pill' },
@@ -1876,7 +1871,7 @@ function App() {
         onPointerLeave: handleFieldPointerUp,
       },
         // Dark rink surface
-        React.createElement('rect', { x: 0, y: 0, width: fw, height: fh, fill: '#1a1a2e', rx: 10 }),
+        React.createElement('rect', { x: 0, y: 0, width: fw, height: fh, fill: '#e8eef5', rx: 10 }),
 
         // Rink markings
         ...renderRinkLines(fw, fh, ppu, ypu),
@@ -1899,20 +1894,20 @@ function App() {
           })
         ) : []),
 
-        // Puck (renders ABOVE markings, BELOW players)
-        React.createElement('circle', {
+        // Puck (only visible when loose or in flight, not when carried)
+        !gameState.ball.carrier ? React.createElement('circle', {
           key: 'puck',
           cx: gameState.ball.x * ppu, cy: gameState.ball.y * ypu,
           r: Math.max(4, ppu * 0.6),
           fill: '#111', stroke: 'rgba(255,255,255,0.8)', strokeWidth: 2,
-        }),
+        }) : null,
 
         // Loose puck indicator
         gameState.ball.loose ? React.createElement('circle', {
           key: 'loose-ring',
           cx: gameState.ball.x * ppu, cy: gameState.ball.y * ypu,
           r: Math.max(10, ppu * 1.2),
-          fill: 'none', stroke: 'white', strokeWidth: 2,
+          fill: 'none', stroke: '#333', strokeWidth: 2,
           opacity: 0.5 + 0.3 * Math.sin(gameState.tick * 0.3),
           strokeDasharray: '4 3',
         }) : null,
@@ -1951,18 +1946,21 @@ function App() {
         // Player tokens (render ABOVE puck)
         ...gameState.players.map(p => renderPlayer(p, ppu, ypu, gameState)),
 
-        // Gold carrier ring
-        gameState.ball.carrier && (() => {
-          const c = gameState.players.find(p => p.id === gameState.ball.carrier);
+        // Puck-on-player carrier indicator
+        gameState.ball.carrier && (function() {
+          var c = gameState.players.find(function(p) { return p.id === gameState.ball.carrier; });
           if (!c) return null;
-          const settling = c.settlingUntil > gameState.tick;
+          var pr = Math.max(14, ppu * 1.7);
+          var puckR = Math.max(6, pr * 0.4);
+          // Position puck at the stick-side edge of the player circle
+          var angle = Math.atan2(gameState.ball.y * ypu - c.y * ypu, gameState.ball.x * ppu - c.x * ppu);
+          var puckCx = c.x * ppu + Math.cos(angle) * (pr * 0.7);
+          var puckCy = c.y * ypu + Math.sin(angle) * (pr * 0.7);
           return React.createElement('circle', {
-            key: 'carrier-ring',
-            cx: c.x * ppu, cy: c.y * ypu,
-            r: Math.max(18, ppu * 2.2),
-            fill: 'none', stroke: '#ffd700',
-            strokeWidth: settling ? 2 : 3,
-            opacity: settling ? 0.5 + 0.3 * Math.sin(gameState.tick * 0.5) : 0.8 + 0.2 * Math.sin(gameState.tick * 0.21),
+            key: 'carrier-puck',
+            cx: puckCx, cy: puckCy,
+            r: puckR,
+            fill: '#111', stroke: 'white', strokeWidth: 1.5,
           });
         })(),
 
@@ -2088,8 +2086,8 @@ function App() {
 function renderPlayer(p, ppu, ypu, gs) {
   const r = Math.max(14, ppu * 1.7);
   const isHome = p.team === 'home';
-  const fill = isHome ? '#2563eb' : '#dc2626';
-  const stroke = isHome ? '#1d4ed8' : '#b91c1c';
+  const fill = isHome ? '#1d4ed8' : '#c41e1e';
+  const stroke = isHome ? '#1e3a8a' : '#991b1b';
   const cx = p.x * ppu;
   const cy = p.y * ypu;
   const fontSize = Math.max(8, r * 0.65);
@@ -2110,7 +2108,7 @@ function renderPlayer(p, ppu, ypu, gs) {
     React.createElement('line', {
       x1: stickStartX, y1: stickStartY,
       x2: stickEndX, y2: stickEndY,
-      stroke: '#ccc', strokeWidth: 2, strokeLinecap: 'round',
+      stroke: '#444', strokeWidth: 2, strokeLinecap: 'round',
     }),
     React.createElement('text', {
       x: cx, y: cy + fontSize * 0.35,
@@ -2127,35 +2125,35 @@ function renderRinkLines(fw, fh, ppu, ypu) {
   // Boards — rounded rectangle border
   lines.push(React.createElement('rect', {
     key: 'boards', x: 1, y: 1, width: fw - 2, height: fh - 2,
-    fill: 'none', stroke: 'rgba(255,255,255,0.7)', strokeWidth: 3, rx: 10, ry: 10,
+    fill: 'none', stroke: 'rgba(0,0,0,0.5)', strokeWidth: 3, rx: 10, ry: 10,
   }));
 
   // Center line (red)
   lines.push(React.createElement('line', {
     key: 'center-line', x1: 50 * ppu, y1: 0, x2: 50 * ppu, y2: fh,
-    stroke: 'rgba(255,0,0,0.6)', strokeWidth: 2,
+    stroke: 'rgba(200,0,0,0.7)', strokeWidth: 2,
   }));
 
   // Center circle (red, no fill)
   lines.push(React.createElement('circle', {
     key: 'center-circle', cx: 50 * ppu, cy: 50 * ypu, r: 10 * ppu,
-    fill: 'none', stroke: 'rgba(255,0,0,0.4)', strokeWidth: 2,
+    fill: 'none', stroke: 'rgba(200,0,0,0.5)', strokeWidth: 2,
   }));
 
   // Center dot (red, filled)
   lines.push(React.createElement('circle', {
     key: 'center-dot', cx: 50 * ppu, cy: 50 * ypu, r: Math.max(3, ppu * 0.5),
-    fill: 'rgba(255,0,0,0.6)',
+    fill: 'rgba(200,0,0,0.7)',
   }));
 
   // Blue lines
   lines.push(React.createElement('line', {
     key: 'blue-left', x1: 25 * ppu, y1: 0, x2: 25 * ppu, y2: fh,
-    stroke: 'rgba(0,100,255,0.5)', strokeWidth: 2,
+    stroke: 'rgba(0,50,200,0.6)', strokeWidth: 2,
   }));
   lines.push(React.createElement('line', {
     key: 'blue-right', x1: 75 * ppu, y1: 0, x2: 75 * ppu, y2: fh,
-    stroke: 'rgba(0,100,255,0.5)', strokeWidth: 2,
+    stroke: 'rgba(0,50,200,0.6)', strokeWidth: 2,
   }));
 
   // Goal creases (semicircles in front of each goal)
@@ -2164,13 +2162,13 @@ function renderRinkLines(fw, fh, ppu, ypu) {
   lines.push(React.createElement('path', {
     key: 'crease-left',
     d: 'M 0 ' + ((50 - creaseR) * ypu) + ' A ' + (creaseR * ppu) + ' ' + (creaseR * ypu) + ' 0 0 1 0 ' + ((50 + creaseR) * ypu),
-    fill: 'rgba(100,200,255,0.2)', stroke: 'rgba(100,200,255,0.4)', strokeWidth: 1,
+    fill: 'rgba(70,130,200,0.15)', stroke: 'rgba(70,130,200,0.3)', strokeWidth: 1,
   }));
   // Right goal crease — semicircle at x=100, bulging left
   lines.push(React.createElement('path', {
     key: 'crease-right',
     d: 'M ' + fw + ' ' + ((50 - creaseR) * ypu) + ' A ' + (creaseR * ppu) + ' ' + (creaseR * ypu) + ' 0 0 0 ' + fw + ' ' + ((50 + creaseR) * ypu),
-    fill: 'rgba(100,200,255,0.2)', stroke: 'rgba(100,200,255,0.4)', strokeWidth: 1,
+    fill: 'rgba(70,130,200,0.15)', stroke: 'rgba(70,130,200,0.3)', strokeWidth: 1,
   }));
 
   // Faceoff dots
@@ -2183,7 +2181,7 @@ function renderRinkLines(fw, fh, ppu, ypu) {
     lines.push(React.createElement('circle', {
       key: 'faceoff-dot-' + i,
       cx: dot.x * ppu, cy: dot.y * ypu, r: Math.max(3, ppu * 0.4),
-      fill: 'rgba(255,0,0,0.4)',
+      fill: 'rgba(200,0,0,0.5)',
     }));
   });
 
