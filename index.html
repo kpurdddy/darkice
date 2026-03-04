@@ -1025,13 +1025,19 @@ function executeShot(state, carrierId, aimX, aimY) {
   var cornerSaveBonus = aimOffCenter * 0.25;
   var cornerWideBonus = aimOffCenter * 0.15;
 
-  // Keeper position factor
+  // Keeper position factor -- tiered thresholds for cross-crease shots
   var keeperId = shootingTeam === 'home' ? 'away_0' : 'home_0';
   var keeper = s.players.find(function(p) { return p.id === keeperId; });
   var keeperFactor = 1.0;
   if (keeper) {
     var keeperDist = Math.abs(keeper.y - clampedAimY);
-    keeperFactor = Math.max(0.4, 1.0 - keeperDist * 0.02);
+    if (keeperDist > 15) {
+      keeperFactor = 0.20;
+    } else if (keeperDist > 8) {
+      keeperFactor = 0.30;
+    } else {
+      keeperFactor = Math.max(0.50, 1.0 - keeperDist * 0.05);
+    }
   }
 
   // Defender factor
@@ -1089,12 +1095,11 @@ function updateShotAnimation(state) {
   s.ball.x = s.shot.fromX + (s.shot.targetX - s.shot.fromX) * progress;
   s.ball.y = s.shot.fromY + (s.shot.targetY - s.shot.fromY) * progress;
 
-  // Keeper slides toward puck
-  const keeperId = s.shot.shootingTeam === 'home' ? 'away_0' : 'home_0';
-  const keeper = s.players.find(p => p.id === keeperId);
-  if (keeper) {
-    keeper.y += (s.shot.targetY - keeper.y) * 0.25;
-    keeper.x += (s.shot.targetX - keeper.x) * 0.12;
+  // Keeper dives toward aim point -- 0.10 rate, no X movement
+  var keeperId2 = s.shot.shootingTeam === 'home' ? 'away_0' : 'home_0';
+  var keeper2 = s.players.find(function(p) { return p.id === keeperId2; });
+  if (keeper2) {
+    keeper2.y += (s.shot.targetY - keeper2.y) * 0.10;
   }
 
   if (s.shot.ticksElapsed >= s.shot.ticksTotal) {
@@ -1727,7 +1732,7 @@ function App() {
         React.createElement('div', { className: 'subtitle' },
           '3v3 hockey. Draw routes. Make plays.'
         ),
-        React.createElement('div', { className: 'version' }, 'Alpha 1.1.0 -- test build'),
+        React.createElement('div', { className: 'version' }, 'Alpha 1.2.0 -- test build'),
         titleMode === 'menu' ? React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' } },
           React.createElement('button', { onClick: startSoloGame }, 'PLAY SOLO'),
           React.createElement('button', {
@@ -1849,7 +1854,7 @@ function App() {
     // RINK (wrapped in div for overlay positioning)
     React.createElement('div', { style: { position: 'relative', width: fw, height: fh } },
       // HUD overlay - version text
-      React.createElement('div', { className: 'hud-version' }, 'Alpha 1.1.0 -- test build'),
+      React.createElement('div', { className: 'hud-version' }, 'Alpha 1.2.0 -- test build'),
       // HUD overlay - score/period/clock
       React.createElement('div', { className: 'hud-overlay' },
         React.createElement('div', { className: 'hud-pill' },
@@ -1870,7 +1875,7 @@ function App() {
         onPointerUp: handleFieldPointerUp,
         onPointerLeave: handleFieldPointerUp,
       },
-        // Dark rink surface
+        // White ice surface
         React.createElement('rect', { x: 0, y: 0, width: fw, height: fh, fill: '#e8eef5', rx: 10 }),
 
         // Rink markings
