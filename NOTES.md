@@ -1,5 +1,17 @@
 # Dark Ice -- Build Notes
 
+## Alpha 1.3.0 (2026-03-04)
+- Fix: Multiplayer freeze after goals. conn.send() was executing inside the React state
+  updater. WebRTC buffer overflow caused the updater to crash, permanently halting the
+  host game loop. Joiner froze simultaneously (depends entirely on host STATE_SYNC).
+- Fix: Moved conn.send() out of the updater into a dedicated throttled useEffect.
+  Network sync now runs at ~20fps (50ms minimum interval) with try/catch so network
+  errors cannot crash game logic.
+- Fix: period_break "Tap to continue" used dispatch instead of dispatchAndSend. Joiner
+  tapping first had no effect -- host's next sync overwrote the local change.
+- Fix: fulltime "Play Again" had the same dispatch bug as period_break. Same fix applied.
+- Known issues: CPU skaters have no offensive AI. Pause-to-draw not yet built.
+
 ## Alpha 1.2.0 (2026-03-04)
 - Fix: Keeper slide rate during shot animation reduced from 0.25 to 0.10 per tick. Keeper now looks like she's diving to intercept rather than receiving a lateral pass.
 - Fix: Keeper X movement during shot animation removed. Keeper stays in crease on X axis -- no longer drifts toward end boards during save.

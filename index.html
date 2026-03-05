@@ -1420,6 +1420,7 @@ function App() {
   const pixelsPerUnitRef = useRef(1);
   const fieldRef = useRef(null);
   const containerRef = useRef(null);
+  const lastSyncRef = useRef(0);
   const [fieldDims, setFieldDims] = useState({ width: 600, height: 400 });
   var dragRef = useRef({ active: false, isDown: false, playerId: null, startX: 0, startY: 0, startGx: 0, startGy: 0, startTime: 0, lastGx: 0, lastGy: 0, waypoints: [] });
   const [titleMode, setTitleMode] = useState('menu');
@@ -1462,20 +1463,29 @@ function App() {
   }, [gameState.phase]);
 
   // Game tick (Joiner is dormant -- receives state from Host via __STATE_SYNC__)
-  useEffect(() => {
+  useEffect(function() {
     if (gameState.phase === 'title') return;
     if (netState.isMultiplayer && !netState.isHost) return;
-    const id = setInterval(() => {
-      setGameState(prev => {
-        var next = updateGame(prev, { type: 'TICK' });
-        if (netState.isMultiplayer && netState.isHost && netState.connected) {
-          netState.conn.send(JSON.stringify({ type: '__STATE_SYNC__', state: next }));
-        }
-        return next;
-      });
+    var id = setInterval(function() {
+      setGameState(function(prev) { return updateGame(prev, { type: 'TICK' }); });
     }, TICK_MS);
-    return () => clearInterval(id);
+    return function() { clearInterval(id); };
   }, [gameState.phase]);
+
+  // Throttled network sync -- sends state to joiner at ~20fps, outside the state updater
+  useEffect(function() {
+    if (netState.isMultiplayer && netState.isHost && netState.connected) {
+      var now = Date.now();
+      if (now - lastSyncRef.current >= 50) {
+        try {
+          netState.conn.send(JSON.stringify({ type: '__STATE_SYNC__', state: gameState }));
+          lastSyncRef.current = now;
+        } catch (err) {
+          console.error('Data channel sync error:', err);
+        }
+      }
+    }
+  }, [gameState]);
 
   const dispatch = useCallback((action) => {
     setGameState(prev => updateGame(prev, action));
@@ -1732,7 +1742,7 @@ function App() {
         React.createElement('div', { className: 'subtitle' },
           '3v3 hockey. Draw routes. Make plays.'
         ),
-        React.createElement('div', { className: 'version' }, 'Alpha 1.2.0 -- test build'),
+        React.createElement('div', { className: 'version' }, 'Alpha 1.3.0 -- test build'),
         titleMode === 'menu' ? React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' } },
           React.createElement('button', { onClick: startSoloGame }, 'PLAY SOLO'),
           React.createElement('button', {
@@ -1854,7 +1864,7 @@ function App() {
     // RINK (wrapped in div for overlay positioning)
     React.createElement('div', { style: { position: 'relative', width: fw, height: fh } },
       // HUD overlay - version text
-      React.createElement('div', { className: 'hud-version' }, 'Alpha 1.2.0 -- test build'),
+      React.createElement('div', { className: 'hud-version' }, 'Alpha 1.3.0 -- test build'),
       // HUD overlay - score/period/clock
       React.createElement('div', { className: 'hud-overlay' },
         React.createElement('div', { className: 'hud-pill' },
@@ -2041,7 +2051,7 @@ function App() {
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           background: 'rgba(0,0,0,0.5)', cursor: 'pointer', zIndex: 100,
         },
-        onPointerDown: () => dispatch({ type: 'START_NEXT_PERIOD' }),
+        onPointerDown: function() { dispatchAndSend({ type: 'START_NEXT_PERIOD' }); },
       },
         React.createElement('div', {
           style: { fontSize: Math.max(36, fw * 0.07) + 'px', fontWeight: 'bold', color: 'white',
@@ -2080,7 +2090,7 @@ function App() {
         React.createElement('button', {
           style: { fontSize: '1.2em', padding: '12px 36px', background: '#27ae60', color: 'white',
             border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' },
-          onClick: () => dispatch({ type: 'PLAY_AGAIN' }),
+          onClick: function() { dispatchAndSend({ type: 'PLAY_AGAIN' }); },
         }, 'PLAY AGAIN'),
       ) : null,
     ),
