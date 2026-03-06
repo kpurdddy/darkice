@@ -1,5 +1,16 @@
 # Dark Ice -- Build Notes
 
+## Alpha 1.3.1 (2026-03-05)
+- Fix: Multiplayer soft-lock after goalie saves. Save rebound landed at x:10/90 but
+  goalie x-clamp prevented her from reaching it (minimum gap ~5 units, pickup radius
+  < 4 units). Puck sat loose forever, CPU logic halted, game frozen.
+- Fix: Added temporary goalie clamp override in driftPlayers. When puck is loose and
+  within 12 units of the goalie, and no skater is closer to the puck, goalie's x-clamp
+  lifts and she drifts toward the puck. Standard clamp resumes immediately when puck
+  is collected or a skater is closer.
+- getDist helper already present; no addition needed.
+- Known issues: CPU skaters have no offensive AI. Pause-to-draw not yet built.
+
 ## Alpha 1.3.0 (2026-03-04)
 - Fix: Multiplayer freeze after goals. conn.send() was executing inside the React state
   updater. WebRTC buffer overflow caused the updater to crash, permanently halting the
