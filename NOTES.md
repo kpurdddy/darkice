@@ -1,5 +1,23 @@
 # Dark Ice -- Build Notes
 
+## Alpha 1.3.3 -- CPU Skater AI
+Date: 2026-03-15
+
+### What changed
+- CPU carrier AI: skaters now advance the puck toward the opponent goal, shoot when in range with a clear path (goalie excluded from blocker check), and pass to open teammates when pressured
+- CPU carrier movement runs every tick (continuous skating); shoot/pass decisions rate-limited to every 30 ticks (~1 second) to prevent instant reactions
+- Offensive zone cycling: carrier switches to lateral movement near the goal line instead of freezing, pulling defenders out of position
+- CPU off-ball offense: when a teammate has the puck, CPU skaters drift to support positions (ahead and spread from carrier) instead of their static formation spots; center targets halfway between carrier and center ice to avoid stacking
+- CPU defense: when the opponent has the puck, CPU skaters collapse toward the carrier's zone; nearest defender intercepts at BURST_SPEED targeting 5 units ahead of carrier on the defensive side, others hold defensive lanes at DRIFT_SPEED
+- lastCpuDecisionTick added to all player objects
+
+### What did NOT change
+- Goalie behavior (CPU always, clamp override from 1.3.1 intact)
+- All constants unchanged (DRIFT_SPEED, BURST_SPEED, PASS_SPEED, SHOOT_RANGE_X, etc.)
+- Shot, pass, check mechanics identical -- CPU uses existing human-available actions
+- No multiplayer changes
+- Save/rebound fix from 1.3.2 intact
+
 ## Alpha 1.3.1 (2026-03-05)
 - Fix: Multiplayer soft-lock after goalie saves. Save rebound landed at x:10/90 but
   goalie x-clamp prevented her from reaching it (minimum gap ~5 units, pickup radius
