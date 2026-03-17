@@ -1,5 +1,23 @@
 # Dark Ice -- Build Notes
 
+## Alpha 1.3.4 -- Save/Rebound Fix + Environmental Goal Check
+Date: 2026-03-17
+
+### What changed
+- Rebound vx and vy multipliers both reduced from 0.8 to 0.2 in updateShotAnimation save branch (max total puck speed ~0.14 units/tick, down from ~0.57) -- goalie can now retrieve rebounds, puck still travels ~20 units via multiplicative deceleration
+- Removed loose puck guard from handleFieldPointerDown -- players can now draw routes during loose puck situations
+- Goalie excluded from tappedPlayer selection loop (role === 'G' skip) -- prevents routing goalie out of crease without creating input dead zone near the crease
+- Added environmental goal check at end of gameTick -- loose pucks or errant passes crossing the goal line within the mouth (y 35-65) now trigger goal_celebration with correct scoring team, then flow through existing resetForFaceoff pipeline
+- Note: 30-tick save_display input lock is handled by existing phase guard, not the loose puck guard -- no exploit window created
+
+### What did NOT change
+- Goalie clamp override from 1.3.1 intact
+- Goalie drift parameters unchanged (speed, anchor spring, awareness radius)
+- CPU AI from 1.3.3 intact
+- Board collision logic in updateLooseBall/updatePassBall unchanged
+- All constants unchanged
+- No multiplayer changes
+
 ## Alpha 1.3.3 -- CPU Skater AI
 Date: 2026-03-15
 

@@ -446,36 +446,6 @@ function gameTick(state) {
   s = clampPlayers(s);
   s = attachBallToCarrier(s);
 
-  // Environmental goal check -- loose pucks or errant passes crossing the goal line
-  if (s.ball.x <= 0 || s.ball.x >= 100) {
-    if (s.ball.y >= 35 && s.ball.y <= 65) {
-      var homeAttackingRight = (s.clock.period % 2 === 1);
-      var scoringTeam;
-
-      if (s.ball.x <= 0) {
-        scoringTeam = homeAttackingRight ? 'away' : 'home';
-      } else {
-        scoringTeam = homeAttackingRight ? 'home' : 'away';
-      }
-
-      s.score = {
-        home: s.score.home + (scoringTeam === 'home' ? 1 : 0),
-        away: s.score.away + (scoringTeam === 'away' ? 1 : 0)
-      };
-
-      s.lastGoalBy = scoringTeam;
-      s.phase = 'goal_celebration';
-      s.goalTimer = s.tick + GOAL_CELEBRATION_TICKS;
-
-      // Zero momentum and position puck at the goal line visually
-      s.ball.vx = 0;
-      s.ball.vy = 0;
-      s.ball.x = s.ball.x <= 0 ? 2 : 98;
-      s.ball.loose = false;
-      s.passBall = null;
-    }
-  }
-
   return s;
 }
 
@@ -1311,8 +1281,8 @@ function updateShotAnimation(state) {
       s.ball.loose = true;
       s.ball.looseTimer = s.tick + LOOSE_BALL_TICKS;
       s.ball.lastCarrierId = null;
-      s.ball.vx = (gameRNG() - 0.5) * 0.2;
-      s.ball.vy = (gameRNG() - 0.5) * 0.2;
+      s.ball.vx = (gameRNG() - 0.5) * 0.8;
+      s.ball.vy = (gameRNG() - 0.5) * 0.8;
       s.phase = 'save_display';
       s.saveDisplayTimer = s.tick + 30;
       s.shot = null;
@@ -1739,7 +1709,7 @@ function App() {
     AudioSys.init();
     var state = stateRef.current;
     if (state.phase !== 'play') return;
-    if (state.passBall) return;
+    if (state.ball.loose || state.passBall) return;
 
     var rect = fieldRef.current.getBoundingClientRect();
     var px = e.clientX - rect.left;
@@ -1756,7 +1726,6 @@ function App() {
     for (var i = 0; i < state.players.length; i++) {
       var p = state.players[i];
       if (p.team !== localTeam) continue;
-      if (p.role === 'G') continue;
       var ppx = p.x * ppu;
       var ppy = p.y * ypu;
       var dist = Math.sqrt((px - ppx) * (px - ppx) + (py - ppy) * (py - ppy));
@@ -1937,7 +1906,7 @@ function App() {
         React.createElement('div', { className: 'subtitle' },
           '3v3 hockey. Draw routes. Make plays.'
         ),
-        React.createElement('div', { className: 'version' }, 'Alpha 1.3.4'),
+        React.createElement('div', { className: 'version' }, 'Alpha 1.3.3'),
         titleMode === 'menu' ? React.createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' } },
           React.createElement('button', { onClick: startSoloGame }, 'PLAY SOLO'),
           React.createElement('button', {
@@ -2059,7 +2028,7 @@ function App() {
     // RINK (wrapped in div for overlay positioning)
     React.createElement('div', { style: { position: 'relative', width: fw, height: fh } },
       // HUD overlay - version text
-      React.createElement('div', { className: 'hud-version' }, 'Alpha 1.3.4'),
+      React.createElement('div', { className: 'hud-version' }, 'Alpha 1.3.3'),
       // HUD overlay - score/period/clock
       React.createElement('div', { className: 'hud-overlay' },
         React.createElement('div', { className: 'hud-pill' },
